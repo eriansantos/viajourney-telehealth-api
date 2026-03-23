@@ -18,15 +18,9 @@ app.get("/health", (_req, res) => {
   res.json({ status: "ok", service: "viajourney-telehealth-api" });
 });
 
-// Routes (a adicionar)
-// import ecwRouter from "./routes/ecw.js";
-// import hintRouter from "./routes/hint.js";
-// import ghlRouter from "./routes/ghl.js";
-// import rcRouter from "./routes/ringcentral.js";
-// app.use("/api/ecw", ecwRouter);
-// app.use("/api/hint", hintRouter);
-// app.use("/api/ghl", ghlRouter);
-// app.use("/api/rc", rcRouter);
+import elationRouter from "./routes/elation.js";
+
+app.use("/api/elation", elationRouter);
 
 app.listen(PORT, () => {
   console.log(`✅ Via Journey API running on http://localhost:${PORT}`);
