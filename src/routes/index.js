@@ -9,8 +9,12 @@ const router = Router();
 router.use(requireAuthenticated);
 
 // ─── Elation ─────────────────────────────────────────────────────────────────
-router.get("/elation/visit-volume", validateDateRange, elationController.visitVolume);
-router.get("/elation/physicians",                      elationController.physicians);
-router.get("/elation/appointments",  validateDateRange, elationController.appointments);
+router.get("/elation/visit-volume",           validateDateRange, elationController.visitVolume);
+router.get("/elation/speed-to-care",          validateDateRange, elationController.speedToCare);
+router.get("/elation/language-equity",        validateDateRange, elationController.languageEquity);
+router.get("/elation/clinician-performance",  validateDateRange, elationController.clinicianPerformance);
+router.get("/elation/physicians",                               elationController.physicians);
+router.get("/elation/compliance",             validateDateRange, elationController.compliance);
+router.get("/elation/appointments",           validateDateRange, elationController.appointments);
 
 export default router;

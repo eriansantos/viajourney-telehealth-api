@@ -51,8 +51,9 @@ async function get(path, params = {}) {
 
 // ─── Raw API calls ────────────────────────────────────────────────────────────
 export const elationService = {
-  getAppointments: (params) => get("/api/2.0/appointments/", params),
-  getVisitNotes:   (params) => get("/api/2.0/visit_notes/", params),
-  getPhysicians:   (params) => get("/api/2.0/physicians/", params),
-  getPatients:     (params) => get("/api/2.0/patients/", params),
+  getAppointments:  (params) => get("/api/2.0/appointments/", params),
+  getVisitNotes:    (params) => get("/api/2.0/visit_notes/", params),
+  getPhysicians:    (params) => get("/api/2.0/physicians/", params),
+  getPatients:      (params) => get("/api/2.0/patients/", params),
+  getPrescriptions: (params) => get("/api/2.0/medications/", params),
 };
