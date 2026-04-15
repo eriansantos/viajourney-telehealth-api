@@ -11,7 +11,15 @@ import apiRouter from "./routes/index.js";
 const app = express();
 
 app.use(helmet());
-app.use(cors({ origin: config.allowedOrigin }));
+// Support comma-separated list of allowed origins (e.g. local + Vercel URLs)
+const allowedOrigins = config.allowedOrigin.split(",").map(o => o.trim());
+app.use(cors({
+  origin: (origin, cb) => {
+    // Allow requests with no origin (server-to-server, curl, etc.)
+    if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
+    cb(new Error(`CORS: origin ${origin} not allowed`));
+  },
+}));
 app.use(morgan("dev"));
 app.use(express.json());
 app.use(clerk);
