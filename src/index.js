@@ -11,12 +11,14 @@ import apiRouter from "./routes/index.js";
 const app = express();
 
 app.use(helmet());
-// Support comma-separated list of allowed origins (e.g. local + Vercel URLs)
-const allowedOrigins = config.allowedOrigin.split(",").map(o => o.trim());
+// Allow: explicit origins from env, any *.vercel.app deploy, and localhost
+const explicitOrigins = config.allowedOrigin.split(",").map(o => o.trim());
 app.use(cors({
   origin: (origin, cb) => {
-    // Allow requests with no origin (server-to-server, curl, etc.)
-    if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
+    if (!origin) return cb(null, true);                          // server-to-server / curl
+    if (explicitOrigins.includes(origin)) return cb(null, true); // env-listed origins
+    if (/^https:\/\/[\w-]+(\.vercel\.app)$/.test(origin)) return cb(null, true); // any Vercel preview/prod
+    if (/^http:\/\/localhost(:\d+)?$/.test(origin)) return cb(null, true);        // local dev
     cb(new Error(`CORS: origin ${origin} not allowed`));
   },
 }));
