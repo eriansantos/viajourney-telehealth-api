@@ -1,6 +1,8 @@
 // Transforma dados brutos da Elation em métricas para o dashboard.
 // Nenhum dado de paciente (nome, dob, contato) chega aqui.
 
+import { STATUS, THRESHOLDS, ANTIBIOTICS, isAntibiotic } from "../constants/elation.js";
+
 export const elationTransformer = {
 
   // Módulo 2 — Visit Volume & Utilization
@@ -24,13 +26,10 @@ export const elationTransformer = {
       byStatus[status] = (byStatus[status] || 0) + 1;
 
       // Status agrupado
-      const COMPLETED  = ["Checked In","In Room","In Room - Vitals Taken","With Doctor","Checked Out","Billed"];
-      const NO_ACCESS  = ["Not Seen","Cancelled"];
-      const PENDING    = ["Scheduled","Confirmed"];
       let group = "Other";
-      if (COMPLETED.includes(status))  group = "Completed";
-      else if (NO_ACCESS.includes(status)) group = "No Access";
-      else if (PENDING.includes(status))   group = "Pending";
+      if (STATUS.COMPLETED.includes(status))  group = "Completed";
+      else if (STATUS.NO_SHOW.includes(status) || STATUS.CANCELLED.includes(status)) group = "No Access";
+      else if (STATUS.PENDING.includes(status)) group = "Pending";
       byStatusGroup[group] = (byStatusGroup[group] || 0) + 1;
 
       // Mode
@@ -112,21 +111,18 @@ export const elationTransformer = {
   // Módulo 3 — Access & Speed-to-Care
   speedToCare({ appointments }) {
     const appts = appointments.results || [];
-    const CANCELLED = ["Cancelled"];
-    const NO_SHOW   = ["Not Seen"];
-    const DONE      = ["Checked Out", "Billed", "Checked In", "With Doctor", "In Room", "In Room - Vitals Taken"];
 
     let leadTimesHours = [];
     const dist = { "Same day": 0, "1-3 days": 0, "4-7 days": 0, "8+ days": 0 };
     let totalDuration = 0;
     let durationCount = 0;
     let cancelled = 0;
-    let noShow = 0;
+    let noShow    = 0;
 
     for (const appt of appts) {
       const status = appt.status?.status ?? "";
-      if (CANCELLED.includes(status)) cancelled++;
-      if (NO_SHOW.includes(status))   noShow++;
+      if (STATUS.CANCELLED.includes(status)) cancelled++;
+      if (STATUS.NO_SHOW.includes(status))   noShow++;
       if (appt.duration > 0) { totalDuration += appt.duration; durationCount++; }
 
       if (appt.created_date && appt.scheduled_date) {
@@ -145,10 +141,10 @@ export const elationTransformer = {
     const avgLeadTimeHours = leadTimesHours.length
       ? Math.round(leadTimesHours.reduce((a, b) => a + b, 0) / leadTimesHours.length)
       : null;
-    const sameDayRate    = total > 0 ? Math.round((dist["Same day"] / total) * 100) : 0;
+    const sameDayRate      = total > 0 ? Math.round((dist["Same day"] / total) * 100) : 0;
     const cancellationRate = total > 0 ? Math.round((cancelled / total) * 100) : 0;
-    const noShowRate     = total > 0 ? Math.round((noShow / total) * 100) : 0;
-    const avgDuration    = durationCount > 0 ? Math.round(totalDuration / durationCount) : null;
+    const noShowRate       = total > 0 ? Math.round((noShow / total) * 100) : 0;
+    const avgDuration      = durationCount > 0 ? Math.round(totalDuration / durationCount) : null;
 
     return {
       total,
@@ -172,12 +168,12 @@ export const elationTransformer = {
       langMap[p.id] = p.preferred_language || "Other";
     }
 
-    const byLanguage     = {};   // normalized: Portuguese/English/Spanish/Other
-    const byLanguageRaw  = {};   // all languages as-is
-    const leadTimeByLang = {};
-    const leadTimeByLangRaw = {};
-    const noShowByLang   = {};
-    const noShowByLangRaw = {};
+    const byLanguage         = {};
+    const byLanguageRaw      = {};
+    const leadTimeByLang     = {};
+    const leadTimeByLangRaw  = {};
+    const noShowByLang       = {};
+    const noShowByLangRaw    = {};
 
     for (const appt of appts) {
       const rawLang = langMap[appt.patient] || "Other";
@@ -188,13 +184,11 @@ export const elationTransformer = {
 
       const status = appt.status?.status ?? "";
 
-      // normalized
       byLanguage[lang] = (byLanguage[lang] || 0) + 1;
-      if (status === "Not Seen") noShowByLang[lang] = (noShowByLang[lang] || 0) + 1;
+      if (STATUS.NO_SHOW.includes(status)) noShowByLang[lang] = (noShowByLang[lang] || 0) + 1;
 
-      // raw
       byLanguageRaw[rawLang] = (byLanguageRaw[rawLang] || 0) + 1;
-      if (status === "Not Seen") noShowByLangRaw[rawLang] = (noShowByLangRaw[rawLang] || 0) + 1;
+      if (STATUS.NO_SHOW.includes(status)) noShowByLangRaw[rawLang] = (noShowByLangRaw[rawLang] || 0) + 1;
 
       if (appt.created_date && appt.scheduled_date) {
         const diffH = (new Date(appt.scheduled_date) - new Date(appt.created_date)) / 36e5;
@@ -210,17 +204,23 @@ export const elationTransformer = {
     const total = appts.length || 1;
 
     const buildSummary = (byLang, ltByLang, nsLang) =>
-      Object.keys(byLang).sort((a,b) => byLang[b]-byLang[a]).map(lang => {
-        const visits = byLang[lang] || 0;
-        const times  = ltByLang[lang] || [];
-        const avgHours = times.length ? times.reduce((a,b)=>a+b,0)/times.length : null;
+      Object.keys(byLang).sort((a, b) => byLang[b] - byLang[a]).map(lang => {
+        const visits   = byLang[lang] || 0;
+        const times    = ltByLang[lang] || [];
+        const avgHours = times.length ? times.reduce((a, b) => a + b, 0) / times.length : null;
         const avgLead  = avgHours != null ? Math.round(avgHours / 24 * 10) / 10 : null;
         const noShows  = nsLang[lang] || 0;
-        return { lang, visits, pct: Math.round((visits/total)*100), avgLeadTimeDays: avgLead, noShowRate: visits > 0 ? Math.round((noShows/visits)*100) : 0 };
+        return {
+          lang,
+          visits,
+          pct:            Math.round((visits / total) * 100),
+          avgLeadTimeDays: avgLead,
+          noShowRate:     visits > 0 ? Math.round((noShows / visits) * 100) : 0,
+        };
       });
 
-    const FIXED = ["Portuguese","English","Spanish","Other"];
-    const summary    = FIXED.map(l => buildSummary(byLanguage, leadTimeByLang, noShowByLang).find(s=>s.lang===l) || { lang:l, visits:0, pct:0, avgLeadTimeHours:null, noShowRate:0 });
+    const FIXED = ["Portuguese", "English", "Spanish", "Other"];
+    const summary    = FIXED.map(l => buildSummary(byLanguage, leadTimeByLang, noShowByLang).find(s => s.lang === l) || { lang: l, visits: 0, pct: 0, avgLeadTimeDays: null, noShowRate: 0 });
     const summaryRaw = buildSummary(byLanguageRaw, leadTimeByLangRaw, noShowByLangRaw);
 
     return { total: appts.length, byLanguage, byLanguageRaw, summary, summaryRaw };
@@ -230,29 +230,6 @@ export const elationTransformer = {
   clinicianPerformance({ appointments, physicians, prescriptions }) {
     const appts  = appointments.results || [];
     const rxList = prescriptions.results || [];
-
-    const COMPLETED_S = ["Checked In","In Room","In Room - Vitals Taken","With Doctor","Checked Out","Billed"];
-
-    // Antibiotic drug name substrings (case-insensitive)
-    const ANTIBIOTICS = [
-      "amoxicillin","amoxicilina","augmentin","amoxiclav",
-      "azithromycin","azitromicina","zithromax",
-      "doxycycline","doxiciclina",
-      "ciprofloxacin","ciprofloxacino","cipro",
-      "levofloxacin","levofloxacino",
-      "cephalexin","cefalexin","cefdinir","cefuroxime","ceftriaxone",
-      "metronidazole","metronidazol","flagyl",
-      "trimethoprim","sulfamethoxazole","bactrim","septra",
-      "clindamycin","clindamicina",
-      "penicillin","penicilina",
-      "nitrofurantoin","macrobid",
-      "clarithromycin","erythromycin",
-    ];
-
-    const isAntibiotic = (name = "") => {
-      const n = name.toLowerCase();
-      return ANTIBIOTICS.some((a) => n.includes(a));
-    };
 
     // Per physician stats from appointments
     const phMap = {};
@@ -282,7 +259,7 @@ export const elationTransformer = {
     const byPhysician = (physicians.results || []).map((ph) => {
       const stats   = phMap[ph.id] || { total: 0, byStatus: {}, byMonth: {}, rxTotal: 0, rxAntibiotic: 0 };
       const total   = stats.total || 1;
-      const completed = COMPLETED_S.reduce((s, k) => s + (stats.byStatus[k] || 0), 0);
+      const completed = STATUS.COMPLETED.reduce((s, k) => s + (stats.byStatus[k] || 0), 0);
       const antibioticRate = stats.rxTotal > 0
         ? Math.round((stats.rxAntibiotic / stats.rxTotal) * 100)
         : null;
@@ -292,20 +269,20 @@ export const elationTransformer = {
         credentials: ph.credentials,
         is_active:   ph.is_active,
         stats: {
-          total:          stats.total,
-          byStatus:       stats.byStatus,
-          byMonth:        stats.byMonth,
-          rxTotal:        stats.rxTotal,
-          rxAntibiotic:   stats.rxAntibiotic,
+          total:            stats.total,
+          byStatus:         stats.byStatus,
+          byMonth:          stats.byMonth,
+          rxTotal:          stats.rxTotal,
+          rxAntibiotic:     stats.rxAntibiotic,
           antibioticRate,
-          completionRate: Math.round((completed / total) * 100),
-          cancellationRate: Math.round(((stats.byStatus["Cancelled"] || 0) / total) * 100),
-          noShowRate:       Math.round(((stats.byStatus["Not Seen"]  || 0) / total) * 100),
+          completionRate:   Math.round((completed / total) * 100),
+          cancellationRate: Math.round(((stats.byStatus[STATUS.CANCELLED[0]] || 0) / total) * 100),
+          noShowRate:       Math.round(((stats.byStatus[STATUS.NO_SHOW[0]]   || 0) / total) * 100),
         },
       };
     });
 
-    const active = byPhysician.filter((p) => p.is_active);
+    const active      = byPhysician.filter((p) => p.is_active);
     const totalVisits = active.reduce((s, p) => s + p.stats.total, 0);
     const avgVisits   = active.length > 0 ? Math.round(totalVisits / active.length) : 0;
 
@@ -316,10 +293,6 @@ export const elationTransformer = {
   compliance({ appointments, physicians, visitNotes }) {
     const appts = appointments.results || [];
     const notes = visitNotes.results  || [];
-
-    const COMPLETED = ["Checked In","In Room","In Room - Vitals Taken","With Doctor","Checked Out","Billed"];
-    const NO_SHOW   = ["Not Seen"];
-    const CANCELLED = ["Cancelled"];
 
     // Build a set of "physicianId:YYYY-MM-DD" from visit notes
     // (Elation visit notes don't have an appointment field — match by physician + date)
@@ -342,23 +315,22 @@ export const elationTransformer = {
       const status = appt.status?.status || "Unknown";
       if (!phMap[pid]) phMap[pid] = { total: 0, completed: 0, noShow: 0, cancelled: 0, documented: 0 };
       phMap[pid].total++;
-      if (COMPLETED.includes(status)) {
+      if (STATUS.COMPLETED.includes(status)) {
         phMap[pid].completed++;
-        // Check if a note exists for this physician on the same date
         if (appt.scheduled_date) {
           const d2  = new Date(appt.scheduled_date);
           const key = `${pid}:${d2.getUTCFullYear()}-${String(d2.getUTCMonth()+1).padStart(2,"0")}-${String(d2.getUTCDate()).padStart(2,"0")}`;
           if (noteKeys.has(key)) phMap[pid].documented++;
         }
       }
-      if (NO_SHOW.includes(status))   phMap[pid].noShow++;
-      if (CANCELLED.includes(status)) phMap[pid].cancelled++;
+      if (STATUS.NO_SHOW.includes(status))   phMap[pid].noShow++;
+      if (STATUS.CANCELLED.includes(status)) phMap[pid].cancelled++;
     }
 
-    // Overall doc rate (completed appts matched with a visit note by physician+date)
-    const totalCompleted  = appts.filter(a => COMPLETED.includes(a.status?.status || "")).length;
+    // Overall doc rate
+    const totalCompleted  = appts.filter(a => STATUS.COMPLETED.includes(a.status?.status || "")).length;
     const totalDocumented = appts.filter(a => {
-      if (!COMPLETED.includes(a.status?.status || "")) return false;
+      if (!STATUS.COMPLETED.includes(a.status?.status || "")) return false;
       if (!a.scheduled_date) return false;
       const d3  = new Date(a.scheduled_date);
       const key = `${a.physician}:${d3.getUTCFullYear()}-${String(d3.getUTCMonth()+1).padStart(2,"0")}-${String(d3.getUTCDate()).padStart(2,"0")}`;
@@ -366,27 +338,22 @@ export const elationTransformer = {
     }).length;
     const docRate = totalCompleted > 0 ? Math.round((totalDocumented / totalCompleted) * 100) : null;
 
-    // Outlier thresholds
-    const NO_SHOW_TH  = 20;  // %
-    const CANCEL_TH   = 15;  // %
-    const DOC_RATE_TH = 80;  // % (below this = flagged)
-
     const outliers = [];
 
     // Enrich with physician info
     const byPhysician = (physicians.results || []).map(ph => {
-      const stats       = phMap[ph.id] || { total: 0, completed: 0, noShow: 0, cancelled: 0, documented: 0 };
-      const total       = stats.total || 1;
-      const noShowRate  = Math.round((stats.noShow    / total) * 100);
-      const cancelRate  = Math.round((stats.cancelled / total) * 100);
-      const docRatePh   = stats.completed > 0 ? Math.round((stats.documented / stats.completed) * 100) : null;
+      const stats      = phMap[ph.id] || { total: 0, completed: 0, noShow: 0, cancelled: 0, documented: 0 };
+      const total      = stats.total || 1;
+      const noShowRate = Math.round((stats.noShow    / total) * 100);
+      const cancelRate = Math.round((stats.cancelled / total) * 100);
+      const docRatePh  = stats.completed > 0 ? Math.round((stats.documented / stats.completed) * 100) : null;
 
-      if (noShowRate > NO_SHOW_TH)
-        outliers.push({ type: "High no-show rate",       physician: `${ph.first_name} ${ph.last_name}`, value: noShowRate,  threshold: NO_SHOW_TH,  unit: "%" });
-      if (cancelRate > CANCEL_TH)
-        outliers.push({ type: "High cancellation rate",  physician: `${ph.first_name} ${ph.last_name}`, value: cancelRate,  threshold: CANCEL_TH,   unit: "%" });
-      if (docRatePh !== null && docRatePh < DOC_RATE_TH)
-        outliers.push({ type: "Low documentation rate",  physician: `${ph.first_name} ${ph.last_name}`, value: docRatePh,   threshold: DOC_RATE_TH, unit: "%" });
+      if (noShowRate > THRESHOLDS.NO_SHOW)
+        outliers.push({ type: "High no-show rate",      physician: `${ph.first_name} ${ph.last_name}`, value: noShowRate,  threshold: THRESHOLDS.NO_SHOW,      unit: "%" });
+      if (cancelRate > THRESHOLDS.CANCELLATION)
+        outliers.push({ type: "High cancellation rate", physician: `${ph.first_name} ${ph.last_name}`, value: cancelRate,  threshold: THRESHOLDS.CANCELLATION, unit: "%" });
+      if (docRatePh !== null && docRatePh < THRESHOLDS.DOC_RATE)
+        outliers.push({ type: "Low documentation rate", physician: `${ph.first_name} ${ph.last_name}`, value: docRatePh,   threshold: THRESHOLDS.DOC_RATE,     unit: "%" });
 
       return {
         id:          ph.id,
