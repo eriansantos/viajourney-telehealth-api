@@ -32,8 +32,10 @@ export default {
   },
 
   ringcentral: {
-    clientId: process.env.RC_CLIENT_ID || "",
+    clientId:     process.env.RC_CLIENT_ID     || "",
     clientSecret: process.env.RC_CLIENT_SECRET || "",
-    jwtToken: process.env.RC_JWT_TOKEN || "",
+    jwtToken:     process.env.RC_JWT_TOKEN     || "",   // método 1: JWT Grant
+    username:     process.env.RC_USERNAME      || "",   // método 2: Password Grant
+    password:     process.env.RC_PASSWORD      || "",   // método 2: Password Grant
   },
 };
