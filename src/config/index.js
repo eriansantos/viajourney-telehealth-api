@@ -25,6 +25,7 @@ export default {
 
   hint: {
     apiKey: process.env.HINT_API_KEY || "",
+    baseUrl: process.env.HINT_BASE_URL || "https://api.hint.com",
   },
 
   ghl: {

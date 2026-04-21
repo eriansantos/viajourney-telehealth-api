@@ -3,6 +3,7 @@ import { requireAuthenticated } from "../middleware/auth.js";
 import { validateDateRange } from "../middleware/validate.js";
 import { elationController } from "../controllers/elation.js";
 import { rcController }      from "../controllers/ringcentral.js";
+import { hintController }    from "../controllers/hint.js";
 const router = Router();
 
 // Todas as rotas /api/* exigem autenticação Clerk
@@ -19,5 +20,9 @@ router.get("/elation/appointments",           validateDateRange, elationControll
 
 // ─── RingCentral ──────────────────────────────────────────────────────────────
 router.get("/rc/support-load",                validateDateRange, rcController.supportLoad);
+
+// ─── Hint Health ──────────────────────────────────────────────────────────────
+router.get("/hint/membership",                                   hintController.membership);
+router.get("/hint/revenue",                                      hintController.revenue);
 
 export default router;
