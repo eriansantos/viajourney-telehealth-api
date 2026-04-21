@@ -40,16 +40,15 @@ export const hintController = {
         return res.json({ configured: false });
       }
 
-      const [memberships, payments, patients, practitioners] = await Promise.all([
+      const [memberships, payments, practitioners] = await Promise.all([
         hintService.getMemberships(),
         hintService.getPayments().catch(() => []),
-        hintService.getPatients().catch(() => []),
         hintService.getPractitioners().catch(() => []),
       ]);
 
       res.json({
         configured: true,
-        ...hintTransformer.revenue({ memberships, payments, patients, practitioners }),
+        ...hintTransformer.revenue({ memberships, payments, practitioners }),
       });
     } catch (err) {
       next(err);

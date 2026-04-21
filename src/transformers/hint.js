@@ -176,7 +176,7 @@ export const hintTransformer = {
   /**
    * KPIs de Módulo 6 — Revenue & Financial Health
    */
-  revenue({ memberships = [], payments = [], patients = [], practitioners = [] }) {
+  revenue({ memberships = [], payments = [], practitioners = [] }) {
     const now        = new Date();
     const monthStart = startOfMonth(now);
     const prevStart  = startOfPrevMonth(now);
@@ -201,9 +201,18 @@ export const hintTransformer = {
     const revenuePrevM = paidPrevM.reduce((s, p) => s + p._amount, 0);
     const deltaPct = revenuePrevM > 0 ? ((revenueMTD - revenuePrevM) / revenuePrevM) * 100 : 0;
 
-    // ── Per patient ────────────────────────────────────────────────────────
-    const activePatientCount = Math.max(patients.length, 1);
-    const revenuePerPatient = revenueMTD / activePatientCount;
+    // ── Per active member (denominador consistente com a tabela byPlan) ─────
+    const memsNorm = memberships.map((m) => ({
+      ...m,
+      _start: parseDate(m.start_date),
+      _end:   parseDate(m.end_date),
+    }));
+    const isActiveNowFn = (m) =>
+      m.status === "active" || m.is_current === true ||
+      (m._start && m._start <= now && (!m._end || m._end > now));
+
+    const activeMemberCount = Math.max(memsNorm.filter(isActiveNowFn).length, 1);
+    const revenuePerPatient = revenueMTD / activeMemberCount;
 
     // ── Per clinician ──────────────────────────────────────────────────────
     const clinicianCount = Math.max(practitioners.length, 1);
@@ -235,17 +244,9 @@ export const hintTransformer = {
     // ── Por plano — receita via memberships ativos × rate_in_cents/período ─
     // Como não há link direto payments→plan, estimamos via memberships ativos.
     const byPlanMap = new Map();
-    const mems = memberships.map((m) => ({
-      ...m,
-      _start: parseDate(m.start_date),
-      _end:   parseDate(m.end_date),
-    }));
 
-    const isActiveNow = (m) =>
-      m.status === "active" || m.is_current === true || (m._start && m._start <= now && (!m._end || m._end > now));
-
-    for (const m of mems) {
-      if (!isActiveNow(m)) continue;
+    for (const m of memsNorm) {
+      if (!isActiveNowFn(m)) continue;
       const key  = m.plan?.id || "unknown";
       const name = m.plan?.name || "Unknown";
       const monthly = ((m.rate_in_cents || m.last_bill_amount_in_cents || 0) / 100) /
