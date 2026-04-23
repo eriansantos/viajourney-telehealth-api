@@ -88,6 +88,28 @@ async function get(path, params = {}) {
   return res.json();
 }
 
+// ─── Authenticated POST ───────────────────────────────────────────────────────
+async function post(path, body) {
+  const token = await getToken();
+  const res = await fetchWithRetry(`${baseUrl}${path}`, {
+    method: "POST",
+    headers: {
+      Authorization:  `Bearer ${token}`,
+      Accept:         "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    const err  = new Error(`Elation POST ${path} → ${res.status}: ${text}`);
+    err.status = res.status;
+    err.body   = body;
+    throw err;
+  }
+  return res.json();
+}
+
 // ─── Raw API calls ────────────────────────────────────────────────────────────
 export const elationService = {
   getAppointments:  (params) => get("/api/2.0/appointments/",  params),
@@ -95,4 +117,17 @@ export const elationService = {
   getPhysicians:    (params) => get("/api/2.0/physicians/",    params),
   getPatients:      (params) => get("/api/2.0/patients/",      params),
   getPrescriptions: (params) => get("/api/2.0/medications/",   params),
+
+  /**
+   * POST /patients/ — cria paciente no Elation (OAuth privado).
+   * Campos mínimos: first_name, last_name, dob (YYYY-MM-DD), sex, primary_physician, caregiver_practice.
+   */
+  createPatient: (patient) => post("/api/2.0/patients/", patient),
+
+  /**
+   * POST /appointments/ — cria appointment.
+   * Campos: scheduled_date (ISO), duration (min), reason, patient, physician,
+   * practice, service_location, appointment_type_id.
+   */
+  createAppointment: (appointment) => post("/api/2.0/appointments/", appointment),
 };

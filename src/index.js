@@ -7,6 +7,7 @@ import config from "./config/index.js";
 import { clerk } from "./middleware/auth.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 import apiRouter from "./routes/index.js";
+import checkoutRouter from "./routes/checkout.js";
 
 const app = express();
 
@@ -24,6 +25,18 @@ app.use(cors({
 }));
 app.use(morgan("dev"));
 app.use(express.json());
+
+// Checkout público (sem Clerk) — DEVE vir antes do middleware clerk
+// Rate limit próprio: 60 req / 10 min por IP (evita abuso em endpoint público)
+const checkoutLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many checkout requests — please try again later." },
+});
+app.use("/checkout", checkoutLimiter, checkoutRouter);
+
 app.use(clerk);
 
 // ─── Rate limiting ────────────────────────────────────────────────────────────

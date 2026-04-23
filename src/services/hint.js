@@ -86,6 +86,29 @@ async function hintGetAll(path, baseParams = {}) {
   return records;
 }
 
+// ─── POST autenticado (Bearer) ───────────────────────────────────────────────
+async function hintPost(path, body) {
+  if (!hintIsConfigured()) throw new Error("Hint não configurado");
+
+  const res = await fetchWithRetry(`${baseUrl}${path}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      Accept:        "application/json",
+      "Content-Type":"application/json",
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    const err  = new Error(`Hint POST ${path} → ${res.status}: ${text}`);
+    err.status = res.status;
+    throw err;
+  }
+  return res.json();
+}
+
 // ─── API calls (Practice/Provider API — path UNVERSIONED) ────────────────────
 export const hintService = {
   getMemberships:  (params) => hintGetAll("/api/provider/memberships",  params),
@@ -94,4 +117,73 @@ export const hintService = {
   getInvoices:     (params) => hintGetAll("/api/provider/invoices",     params),
   getPayments:     (params) => hintGetAll("/api/provider/payments",     params),
   getPractitioners:(params) => hintGetAll("/api/provider/practitioners",params),
+
+  /**
+   * POST /quotes — retorna preço de uma membership sem criar nada.
+   * @param {string} planId   Hint plan id (pln-…)
+   * @param {object} [opts]
+   * @param {number} [opts.age=35]    age do membro (obrigatório p/ quote)
+   * @param {number} [opts.periodInMonths=1]   1|3|6|12
+   */
+  createQuote: (planId, { age = 35, periodInMonths = 1 } = {}) =>
+    hintPost("/api/provider/quotes", {
+      plan: { id: planId },
+      members: [{ age }],
+      period_in_months: periodInMonths,
+    }),
+
+  /**
+   * POST /patients — cria paciente no Hint.
+   * Campos mínimos: first_name, last_name, email. dob (YYYY-MM-DD) recomendado.
+   * @param {object} patient
+   * @returns {Promise<{id: string, ...}>}
+   */
+  createPatient: (patient) =>
+    hintPost("/api/provider/patients", patient),
+
+  /**
+   * POST /patients/:id/payment_methods/setup — cria setup intent do Rainforest.
+   * Retorna { payment_processor, payment_method_config_id, session_key, allowed_methods }.
+   */
+  createSetupIntent: (patientId, { userIsOwner = true, acceptsBank = false } = {}) =>
+    hintPost(`/api/provider/patients/${patientId}/payment_methods/setup`, {
+      user_is_owner: userIsOwner,
+      accepts_bank: acceptsBank,
+    }),
+
+  /**
+   * POST /patients/:id/payment_methods — anexa método tokenizado pela Rainforest.
+   * @param {string} patientId
+   * @param {string} rainforestId  token retornado pelo Rainforest Payment Component
+   */
+  createPaymentMethod: (patientId, rainforestId) =>
+    hintPost(`/api/provider/patients/${patientId}/payment_methods`, {
+      rainforest_id: rainforestId,
+    }),
+
+  /**
+   * POST /memberships — cria assinatura para o paciente.
+   * @param {object} opts
+   * @param {string} opts.planId          pln-…
+   * @param {string} opts.patientId       sbx-pat-…
+   * @param {string} opts.startDate       "YYYY-MM-DD"
+   * @param {number} [opts.periodInMonths=1]   1|3|6|12
+   */
+  /**
+   * POST /memberships — cria assinatura.
+   * Shape descoberto empiricamente (docs incompletos):
+   *   - owner.id            — quem paga (subscriber)
+   *   - membership_patients — lista de membros. Cada um tem:
+   *       patient.id        (pra linkar paciente existente)
+   *       member_type       ("employee" p/ subscriber principal, "spouse" ou "dependent" p/ adicionais)
+   *   - plan.id, start_date, period_in_months (1|3|6|12)
+   */
+  createMembership: ({ planId, patientId, startDate, periodInMonths = 1, memberType = "employee" }) =>
+    hintPost("/api/provider/memberships", {
+      plan:  { id: planId },
+      owner: { id: patientId },
+      membership_patients: [{ patient: { id: patientId }, member_type: memberType }],
+      start_date: startDate,
+      period_in_months: periodInMonths,
+    }),
 };
