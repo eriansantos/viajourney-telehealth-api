@@ -7,6 +7,7 @@ import { checkoutController } from "../controllers/checkout.js";
 const router = Router();
 
 router.get("/plans", checkoutController.plans);
+router.get("/lookup", checkoutController.lookup);
 router.get("/availability", checkoutController.availability);
 router.post("/book", checkoutController.book);
 router.post("/setup-intent", checkoutController.setupIntent);

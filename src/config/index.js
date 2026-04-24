@@ -29,7 +29,10 @@ export default {
   },
 
   ghl: {
-    apiKey: process.env.GHL_API_KEY || "",
+    apiKey:     process.env.GHL_API_KEY     || "",  // Private Integration Token (pit-...)
+    locationId: process.env.GHL_LOCATION_ID || "",
+    baseUrl:    process.env.GHL_BASE_URL    || "https://services.leadconnectorhq.com",
+    apiVersion: process.env.GHL_API_VERSION || "2021-07-28",
   },
 
   ringcentral: {

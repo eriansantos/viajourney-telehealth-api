@@ -53,6 +53,41 @@ function shiftNaive(naive, fromTz, toTz) {
 }
 
 export const checkoutController = {
+
+  /**
+   * GET /checkout/lookup?email=...
+   * Busca o lead no GHL pelo email. Retorna { found, patient, complete, missing }.
+   * `complete` = true quando firstName/email/dob/sex estão todos presentes —
+   * nesse caso o frontend pula a tela de preenchimento.
+   */
+  async lookup(req, res, next) {
+    try {
+      const email = String(req.query.email || "").trim().toLowerCase();
+      if (!email) return res.status(400).json({ error: "email é obrigatório" });
+      if (!ghlIsConfigured()) {
+        return res.json({ found: false, patient: null, complete: false, missing: ["*"] });
+      }
+      const contact = await lookupByEmail(email);
+      if (!contact) return res.json({ found: false, patient: null, complete: false, missing: ["*"] });
+
+      // Normaliza shape pro que o form do VPayment consome.
+      const patient = {
+        firstName: contact.firstName || "",
+        lastName:  contact.lastName  || "",
+        email:     contact.email     || email,
+        phone:     contact.phone     || "",
+        state:     contact.state     || "",
+        dob:       contact.dob       || "",
+        sex:       contact.sex       || "",
+        ghlContactId: contact.ghlContactId || null,
+      };
+      const required = ["firstName", "email", "dob", "sex"];
+      const missing  = required.filter(k => !patient[k]);
+
+      res.json({ found: true, patient, complete: missing.length === 0, missing });
+    } catch (e) { next(e); }
+  },
+
   /**
    * GET /checkout/plans — retorna catálogo público de planos com preço real do Hint.
    * Para cada plano, chama POST /quotes no Hint (age=35, period=1 mês) pra obter
