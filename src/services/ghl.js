@@ -43,6 +43,24 @@ async function ghlGet(path, params = {}) {
   return json;
 }
 
+async function ghlPost(path, body) {
+  const res = await fetchWithTimeout(`${baseUrl}${path}`, {
+    method:  "POST",
+    headers: { ...headers(), "Content-Type": "application/json" },
+    body:    JSON.stringify(body),
+  });
+  const text = await res.text();
+  let json;
+  try { json = text ? JSON.parse(text) : null; } catch { json = { raw: text }; }
+  if (!res.ok) {
+    const err = new Error(`GHL POST ${res.status} ${path}: ${JSON.stringify(json)}`);
+    err.status = res.status;
+    err.upstream = json;
+    throw err;
+  }
+  return json;
+}
+
 /**
  * IDs dos custom fields da LP — confirmados via /locations/{id}/customFields.
  * Se a LP for migrada/recriada, basta atualizar aqui.
@@ -182,8 +200,94 @@ export async function lookupByEmail(email) {
 }
 
 // Exportados pra teste/uso externo.
-export { normalizeFlAnswer, normalizeUsState };
+export { normalizeFlAnswer, normalizeUsState, mapContact };
+
+/**
+ * Lista contacts via POST /contacts/search com filtro de dateAdded.
+ * Pagina automaticamente até retornar todos os matches dentro da janela.
+ *
+ * @param {object} opts
+ * @param {Date}   opts.from        início da janela (inclusivo)
+ * @param {Date}   opts.to          fim da janela (exclusivo)
+ * @param {number} [opts.maxRecords=5000]  proteção contra runaway
+ * @returns {Promise<Array>}        array bruto de contacts
+ */
+export async function listContactsInRange({ from, to, maxRecords = 5000 } = {}) {
+  if (!ghlIsConfigured()) return [];
+
+  const records = [];
+  const pageLimit = 100;
+  let page = 1;
+
+  while (records.length < maxRecords) {
+    const body = {
+      locationId,
+      page,
+      pageLimit,
+      filters: [
+        { field: "dateAdded", operator: "range", value: { gte: from.toISOString(), lte: to.toISOString() } },
+      ],
+      sort: [{ field: "dateAdded", direction: "desc" }],
+    };
+
+    let json;
+    try {
+      json = await ghlPost("/contacts/search", body);
+    } catch (err) {
+      // Algumas instalações GHL retornam 422 ou 400 se o filtro não for aceito.
+      // Fallback: GET /contacts/ paginação por cursor + filtro client-side.
+      if (err.status === 422 || err.status === 400 || err.status === 404) {
+        return listContactsViaGet({ from, to, maxRecords });
+      }
+      throw err;
+    }
+
+    const batch = Array.isArray(json?.contacts) ? json.contacts : [];
+    records.push(...batch);
+    if (batch.length < pageLimit) break;
+    page += 1;
+  }
+
+  return records;
+}
+
+/**
+ * Fallback: GET /contacts/ com paginação por cursor (startAfterId).
+ * Filtra dateAdded client-side. Usado quando POST /contacts/search não está
+ * disponível na conta.
+ */
+async function listContactsViaGet({ from, to, maxRecords = 5000 }) {
+  const records = [];
+  let startAfterId = null;
+  const fromMs = from.getTime();
+  const toMs   = to.getTime();
+
+  while (records.length < maxRecords) {
+    const json = await ghlGet("/contacts/", {
+      locationId,
+      limit:        100,
+      startAfterId,
+    });
+    const batch = Array.isArray(json?.contacts) ? json.contacts : [];
+    if (batch.length === 0) break;
+
+    let stoppedEarly = false;
+    for (const c of batch) {
+      const t = c.dateAdded ? new Date(c.dateAdded).getTime() : 0;
+      if (t < fromMs) { stoppedEarly = true; break; }   // ordenado desc → tudo daqui pra trás é mais antigo
+      if (t < toMs)   records.push(c);
+    }
+    if (stoppedEarly) break;
+
+    startAfterId = json?.meta?.startAfterId;
+    if (!startAfterId) break;
+  }
+
+  return records;
+}
 
 export const ghlService = {
   lookupByEmail,
+  listContactsInRange,
+  mapContact,
 };
