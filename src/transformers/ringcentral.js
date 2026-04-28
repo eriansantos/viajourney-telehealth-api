@@ -10,6 +10,34 @@ function round1(n) {
   return Math.round(n * 10) / 10;
 }
 
+// Considera business hours como 8am-6pm Eastern, Mon-Fri.
+// Como o backend não converte timezone, usamos o getHours() em UTC e
+// ajustamos o offset Eastern (-4 EDT / -5 EST). Aproximamos com -4 (DST).
+function isAfterHoursEastern(isoStr) {
+  if (!isoStr) return false;
+  const d = new Date(isoStr);
+  // Converte UTC pra Eastern aproximado (DST = UTC-4).
+  const eastern = new Date(d.getTime() - 4 * 60 * 60 * 1000);
+  const day = eastern.getUTCDay();          // 0=Sun, 6=Sat
+  const hour = eastern.getUTCHours();
+  const isWeekend = day === 0 || day === 6;
+  const isOutsideWindow = hour < 8 || hour >= 18;
+  return isWeekend || isOutsideWindow;
+}
+
+// Normaliza um número de telefone pra dígitos. "+1 (941) 337-9856" → "19413379856"
+function digitsOnly(phone) {
+  return String(phone || "").replace(/\D/g, "");
+}
+
+// Dois telefones casam se os 10 últimos dígitos coincidem (ignora código de país).
+function phonesMatch(a, b) {
+  const aa = digitsOnly(a);
+  const bb = digitsOnly(b);
+  if (!aa || !bb) return false;
+  return aa.slice(-10) === bb.slice(-10);
+}
+
 // ─── Transformer ──────────────────────────────────────────────────────────────
 export const rcTransformer = {
   /**
@@ -20,7 +48,7 @@ export const rcTransformer = {
    * @param {object[]} appts      – resultados de appointments do Elation
    * @param {Date}     periodStart – início do período de análise
    */
-  supportLoad({ calls, messages, appts, periodStart }) {
+  supportLoad({ calls, messages, appts, periodStart, patients = [] }) {
     const WEEKS = 8;
     const start = periodStart instanceof Date ? periodStart : new Date(periodStart);
 
@@ -92,6 +120,58 @@ export const rcTransformer = {
       v > 0 ? round1(weekMsgs[i] / v) : null
     );
 
+    // ── Missed calls ─────────────────────────────────────────────────────────
+    // Resultado RC: "Missed", "No Answer", "Voicemail", "Rejected", "Hang Up"
+    // contam como missed do ponto de vista de operação (cliente ligou, ninguém
+    // atendeu OU foi pra correio/desligou).
+    const MISSED_RESULTS = new Set(["Missed", "No Answer", "Voicemail", "Rejected", "Hang Up"]);
+    const missedInbound = inboundCalls.filter((c) => MISSED_RESULTS.has(c.result));
+    const missedRate =
+      inboundCalls.length > 0
+        ? round1((missedInbound.length / inboundCalls.length) * 100)
+        : null;
+
+    // ── After-hours volume ───────────────────────────────────────────────────
+    const afterHoursCalls = calls.filter((c) => isAfterHoursEastern(c.startTime));
+    const afterHoursPct =
+      calls.length > 0
+        ? round1((afterHoursCalls.length / calls.length) * 100)
+        : null;
+
+    // ── Call → booking conversion ────────────────────────────────────────────
+    // Pegamos os telefones únicos de inbound calls e cruzamos com phone do
+    // Elation patients que aparece como `patient` em algum appointment.
+    const phoneToPatientId = new Map();
+    for (const p of patients) {
+      const list = Array.isArray(p.phones) ? p.phones : [];
+      for (const ph of list) {
+        if (ph?.deleted_date) continue;
+        const num = ph?.phone || ph?.number || (typeof ph === "string" ? ph : null);
+        if (!num) continue;
+        const key = digitsOnly(num).slice(-10);
+        if (key.length === 10) phoneToPatientId.set(key, p.id);
+      }
+    }
+
+    const apptPatientIds = new Set(appts.map((a) => a.patient).filter(Boolean));
+
+    const inboundCallerPhones = new Set();
+    for (const c of inboundCalls) {
+      const fromKey = digitsOnly(c.from?.phoneNumber).slice(-10);
+      if (fromKey.length === 10) inboundCallerPhones.add(fromKey);
+    }
+
+    let callersBookedCount = 0;
+    for (const phoneKey of inboundCallerPhones) {
+      const patientId = phoneToPatientId.get(phoneKey);
+      if (patientId && apptPatientIds.has(patientId)) callersBookedCount += 1;
+    }
+
+    const callToBookingPct =
+      inboundCallerPhones.size > 0
+        ? round1((callersBookedCount / inboundCallerPhones.size) * 100)
+        : null;
+
     return {
       kpis: {
         callsPerVisit,
@@ -107,6 +187,16 @@ export const rcTransformer = {
           inboundCalls.length > 0
             ? Math.round((answeredInbound.length / inboundCalls.length) * 100)
             : null,
+        // novos KPIs (Phase 2)
+        missedRate,
+        missedCount:        missedInbound.length,
+        inboundCount:       inboundCalls.length,
+        afterHoursPct,
+        afterHoursCount:    afterHoursCalls.length,
+        callToBookingPct,
+        uniqueCallers:      inboundCallerPhones.size,
+        callersBooked:      callersBookedCount,
+        crossSourceAvailable: patients.length > 0,
       },
       trend: {
         labels:         Array.from({ length: WEEKS }, (_, i) => `W${i + 1}`),

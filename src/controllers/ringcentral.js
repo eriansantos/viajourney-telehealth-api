@@ -28,15 +28,19 @@ export const rcController = {
       const elFrom     = periodStart.toISOString().slice(0, 10);
       const elTo       = periodEnd.toISOString().slice(0, 10);
 
-      // ── Chamadas paralelas: RC + Elation ───────────────────────────────────
-      let calls, messages, appointments;
+      // ── Chamadas paralelas: RC + Elation (incluindo patients p/ matching) ─
+      let calls, messages, appointments, patientsResp;
       try {
-        [calls, messages, appointments] = await Promise.all([
+        [calls, messages, appointments, patientsResp] = await Promise.all([
           rcService.getCallLog({ dateFrom: rcFrom, dateTo: rcTo }),
           rcService.getMessages({ dateFrom: rcFrom, dateTo: rcTo }),
           elationService.getAppointments({
             scheduled_date_from: elFrom,
             scheduled_date_to:   elTo,
+          }),
+          elationService.getPatients().catch((err) => {
+            console.warn("[rc.supportLoad] elation patients failed:", err.message);
+            return { results: [] };
           }),
         ]);
       } catch (rcErr) {
@@ -50,11 +54,12 @@ export const rcController = {
         throw rcErr; // outros erros sobem normalmente
       }
 
-      const appts = appointments.results ?? [];
+      const appts    = appointments.results ?? [];
+      const patients = patientsResp?.results ?? [];
 
       res.json({
         configured: true,
-        ...rcTransformer.supportLoad({ calls, messages, appts, periodStart }),
+        ...rcTransformer.supportLoad({ calls, messages, appts, periodStart, patients }),
       });
     } catch (err) {
       next(err);
