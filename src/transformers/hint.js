@@ -182,18 +182,23 @@ export const hintTransformer = {
     const prevStart  = startOfPrevMonth(now);
 
     // ── Normaliza pagamentos ───────────────────────────────────────────────
+    // NOTA: Hint /api/provider/payments não expõe `patient` nem `membership`,
+    // e `date` é null em failed payments. Por isso o agrupamento abaixo é
+    // por `source.id` (card) e a janela MTD só é confiável pra paid/refunded.
     const pays = payments.map((p) => ({
       ...p,
-      _date:   parseDate(p.date),
-      _amount: (p.amount_in_cents || 0) / 100,
+      _date:    parseDate(p.date),
+      _amount:  (p.amount_in_cents || 0) / 100,
+      _cardId:  p.source?.id || null,
     }));
 
     const inMonth = (p, from, to) => p._date && p._date >= from && p._date < to;
 
-    const paidMTD   = pays.filter((p) => p.status === "paid"    && inMonth(p, monthStart, now));
-    const failedMTD = pays.filter((p) => p.status === "failed"  && inMonth(p, monthStart, now));
-    const refundMTD = pays.filter((p) => p.status === "refunded" && inMonth(p, monthStart, now));
+    const paidMTD   = pays.filter((p) => p.status === "paid"      && inMonth(p, monthStart, now));
+    const refundMTD = pays.filter((p) => p.status === "refunded"  && inMonth(p, monthStart, now));
     const cbMTD     = pays.filter((p) => p.status === "chargeback" && inMonth(p, monthStart, now));
+    const allFailed = pays.filter((p) => p.status === "failed");
+    const allPaid   = pays.filter((p) => p.status === "paid");
 
     const revenueMTD = paidMTD.reduce((s, p) => s + p._amount, 0);
 
@@ -219,67 +224,76 @@ export const hintTransformer = {
     const revenuePerClinician = revenueMTD / clinicianCount;
 
     // ── Rates ──────────────────────────────────────────────────────────────
-    const totalAttempts = paidMTD.length + failedMTD.length;
-    const failedRate = totalAttempts > 0 ? (failedMTD.length / totalAttempts) * 100 : 0;
-
-    // Recovery: pagamentos falhos seguidos de pago com memo "retry" ou dentro de 7 dias
-    const recoveryRate = 0; // sandbox não tem dados de falha — placeholder
+    // Hint failed payments não trazem date, então failedRate é calculado
+    // sobre o histórico inteiro (não só MTD). Essa imprecisão fica documentada
+    // na UI como "lifetime" em vez de "MTD".
+    const totalAttempts = allPaid.length + allFailed.length;
+    const failedRate = totalAttempts > 0 ? (allFailed.length / totalAttempts) * 100 : 0;
 
     const refundRate     = paidMTD.length > 0 ? (refundMTD.length / paidMTD.length) * 100 : 0;
     const chargebackRate = paidMTD.length > 0 ? (cbMTD.length    / paidMTD.length) * 100 : 0;
 
-    // ── Dunning queue — pagamentos falhos agrupados por paciente ─────────────
-    // Inclui falhas dos últimos 60 dias (não só MTD) — janela típica de cobrança.
-    const dunningWindow = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000);
-    const failedRecent = pays.filter(
-      (p) => p.status === "failed" && p._date && p._date >= dunningWindow
-    );
-
-    const patientName = (p) => {
-      const pat = p.patient || {};
-      const full = [pat.first_name, pat.last_name].filter(Boolean).join(" ");
-      return full || pat.name || "Unknown";
-    };
-    const patientId = (p) => p.patient?.id || "unknown";
-
-    const planByPatient = new Map();
-    for (const m of memsNorm) {
-      if (!isActiveNowFn(m)) continue;
-      const owner = m.owner?.id;
-      if (owner && !planByPatient.has(owner)) {
-        planByPatient.set(owner, m.plan?.name || "—");
+    // ── Recovery rate ──────────────────────────────────────────────────────
+    // Heurística: agrupa por source.id (card). Se o card teve uma falha e
+    // depois um pagamento "paid", consideramos que ela foi recuperada.
+    // Limitação: sem datas reais nas falhas, "depois" significa "também
+    // existe um paid no histórico do mesmo card".
+    const cardOutcome = new Map(); // cardId → { hasFailed, hasPaid }
+    for (const p of pays) {
+      if (!p._cardId) continue;
+      const o = cardOutcome.get(p._cardId) || { hasFailed: false, hasPaid: false };
+      if (p.status === "failed") o.hasFailed = true;
+      if (p.status === "paid")   o.hasPaid   = true;
+      cardOutcome.set(p._cardId, o);
+    }
+    let cardsFailed = 0, cardsRecovered = 0;
+    for (const o of cardOutcome.values()) {
+      if (o.hasFailed) {
+        cardsFailed += 1;
+        if (o.hasPaid) cardsRecovered += 1;
       }
     }
+    const recoveryRate = cardsFailed > 0 ? (cardsRecovered / cardsFailed) * 100 : 0;
 
+    // ── Dunning queue — failed payments agrupados por card (source.id) ─────
+    // Sem patient/membership ref no payment, o melhor agrupamento é por card.
+    // Incluímos TODAS as falhas (date null é a regra, não exceção).
+    // Cards que já tiveram um paid posterior são considerados "recuperados"
+    // e excluídos da fila ativa.
     const dunningMap = new Map();
-    for (const p of failedRecent) {
-      const key = patientId(p);
+    for (const p of allFailed) {
+      // Falhas sem card são ruído de configuração ("Unable to process a
+      // payment without a default payment source") — não são fila de
+      // cobrança acionável, então filtramos fora.
+      if (!p._cardId) continue;
+      const key = p._cardId;
       if (!dunningMap.has(key)) {
         dunningMap.set(key, {
-          patientId: key,
-          patient:   patientName(p),
-          plan:      planByPatient.get(key) || "—",
+          cardId:    key,
+          cardLabel: `Card …${key.slice(-6)}`,
           attempts:  0,
           amount:    0,
-          lastFail:  null,
+          lastError: null,
         });
       }
       const row = dunningMap.get(key);
       row.attempts += 1;
       row.amount   += p._amount;
-      if (!row.lastFail || p._date > row.lastFail) row.lastFail = p._date;
+      if (p.error_message) row.lastError = p.error_message;
+    }
+    // Remove cards que já tiveram paid (recuperados)
+    for (const [cardId, outcome] of cardOutcome.entries()) {
+      if (outcome.hasFailed && outcome.hasPaid) dunningMap.delete(cardId);
     }
 
     const dunningQueue = Array.from(dunningMap.values())
       .map((r) => ({
         ...r,
-        amount:        Math.round(r.amount * 100) / 100,
-        daysSinceFail: r.lastFail ? Math.floor((now - r.lastFail) / (1000 * 60 * 60 * 24)) : null,
-        lastFail:      r.lastFail ? r.lastFail.toISOString().slice(0, 10) : null,
+        amount: Math.round(r.amount * 100) / 100,
       }))
       .sort((a, b) => b.amount - a.amount);
 
-    const failedAmountMTD = failedMTD.reduce((s, p) => s + p._amount, 0);
+    const failedAmountTotal = allFailed.reduce((s, p) => s + p._amount, 0);
     const recoverableAmount = dunningQueue.reduce((s, r) => s + r.amount, 0);
 
     // ── Revenue trend — 6 meses ────────────────────────────────────────────
@@ -333,10 +347,12 @@ export const hintTransformer = {
         refundRate:          round1(refundRate),
         chargebackRate:      round1(chargebackRate),
         deltaPctVsPrev:      round1(deltaPct),
-        failedAmountMTD:     Math.round(failedAmountMTD),
-        failedCountMTD:      failedMTD.length,
+        failedAmountTotal:   Math.round(failedAmountTotal),
+        failedCountTotal:    allFailed.length,
         recoverableAmount:   Math.round(recoverableAmount),
         dunningCount:        dunningQueue.length,
+        cardsRecovered,
+        cardsFailed,
       },
       trend: {
         labels:  labels6m,
