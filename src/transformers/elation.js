@@ -94,7 +94,10 @@ export const elationTransformer = {
     }));
 
     return {
-      total: appointments.count ?? appts.length,
+      // total = appts.length (não appointments.count) para o KPI bater com
+      // os breakdowns. Se em prod a API paginar e só retornar 1ª página, o
+      // total da API seria > o que processamos; melhor mostrar consistente.
+      total: appts.length,
       byStatus,
       byStatusGroup,
       byMode,
@@ -276,8 +279,8 @@ export const elationTransformer = {
           rxAntibiotic:     stats.rxAntibiotic,
           antibioticRate,
           completionRate:   Math.round((completed / total) * 100),
-          cancellationRate: Math.round(((stats.byStatus[STATUS.CANCELLED[0]] || 0) / total) * 100),
-          noShowRate:       Math.round(((stats.byStatus[STATUS.NO_SHOW[0]]   || 0) / total) * 100),
+          cancellationRate: Math.round((STATUS.CANCELLED.reduce((s, k) => s + (stats.byStatus[k] || 0), 0) / total) * 100),
+          noShowRate:       Math.round((STATUS.NO_SHOW.reduce(  (s, k) => s + (stats.byStatus[k] || 0), 0) / total) * 100),
         },
       };
     });
