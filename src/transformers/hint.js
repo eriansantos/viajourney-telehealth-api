@@ -95,23 +95,30 @@ export const hintTransformer = {
       cancelSeries.push(mems.filter((m) => endedInRange(m, from, to)).length);
     }
 
-    // ── Retention cohort — % que continuam ativos após N meses ─────────────
-    const cohortRate = (monthsWindow) => {
-      const from = new Date(now.getFullYear(), now.getMonth() - monthsWindow - 2, 1);
-      const to   = new Date(now.getFullYear(), now.getMonth() - monthsWindow - 1, 1);
-      const cohort = mems.filter((m) => startedInRange(m, from, to));
-      if (cohort.length === 0) return null;
-      const still = cohort.filter(
-        (m) => !m._end || monthsAgo(m._end, now) < monthsWindow
-      ).length;
-      return Math.round((still / cohort.length) * 100);
+    // ── Retention cohort ──────────────────────────────────────────────────
+    // De quem começou no mês exatamente N meses atrás, qual % ainda está
+    // ativo hoje? (proxy padrão de "retained at N months").
+    // Retorna { rate, cohortSize } para a UI poder sinalizar amostras
+    // pequenas (sandbox típico tem cohorts de 2-5).
+    const cohortStats = (monthsWindow) => {
+      const cohortStart = new Date(now.getFullYear(), now.getMonth() - monthsWindow,     1);
+      const cohortEnd   = new Date(now.getFullYear(), now.getMonth() - monthsWindow + 1, 1);
+      const cohort = mems.filter(
+        (m) => m._start && m._start >= cohortStart && m._start < cohortEnd
+      );
+      if (cohort.length === 0) return { rate: null, cohortSize: 0 };
+      const stillActive = cohort.filter((m) => !m._end || m._end > now).length;
+      return {
+        rate:       Math.round((stillActive / cohort.length) * 100),
+        cohortSize: cohort.length,
+      };
     };
 
     const retention = {
-      m1:  cohortRate(1),
-      m3:  cohortRate(3),
-      m6:  cohortRate(6),
-      m12: cohortRate(12),
+      m1:  cohortStats(1),
+      m3:  cohortStats(3),
+      m6:  cohortStats(6),
+      m12: cohortStats(12),
     };
 
     // ── Por plano ──────────────────────────────────────────────────────────
