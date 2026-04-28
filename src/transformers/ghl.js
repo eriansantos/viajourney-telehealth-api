@@ -128,18 +128,18 @@ export const ghlTransformer = {
       .map(([name, count]) => ({ name, count }))
       .sort((a, b) => b.count - a.count);
 
-    // ── Por state (só leads MTD com state válido) ──────────────────────────
-    const stateMap = new Map();
+    // ── Por state (leads MTD com state válido) ─────────────────────────────
+    const stateLeadsMap   = new Map(); // code → { leads, leadEmails: Set }
     for (const c of ldNorm) {
       if (!inRange(c, monthStart, now)) continue;
       const code = (c.state || "").toUpperCase();
       if (!STATE_NAMES[code]) continue;
-      stateMap.set(code, (stateMap.get(code) || 0) + 1);
+      if (!stateLeadsMap.has(code)) stateLeadsMap.set(code, { leads: 0, leadEmails: new Set() });
+      const row = stateLeadsMap.get(code);
+      row.leads += 1;
+      const e = lower(c.email);
+      if (e) row.leadEmails.add(e);
     }
-    const byState = Array.from(stateMap.entries())
-      .map(([code, count]) => ({ code, name: STATE_NAMES[code], count }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 8);
 
     // ── Cross-source matching (Phase 2) ────────────────────────────────────
     // Denominador: leads MTD (mesmo da Phase 1).
@@ -217,7 +217,36 @@ export const ghlTransformer = {
         leadToMemberPct:  denom > 0 ? round1((memberCount / denom) * 100) : 0,
         abandonmentPct:   abandonment == null ? null : round1(abandonment),
       };
+
+      // Per-state conversion (mesmo numerador/denominador, segmentado).
+      for (const [, row] of stateLeadsMap) {
+        let b = 0, p = 0, m = 0;
+        for (const e of row.leadEmails) {
+          if (bookedEmails.has(e))    b += 1;
+          if (completedEmails.has(e)) p += 1;
+          if (memberEmails.has(e))    m += 1;
+        }
+        row.booked    = b;
+        row.paid      = p;
+        row.members   = m;
+        row.bookedPct = row.leads > 0 ? round1((b / row.leads) * 100) : 0;
+        row.paidPct   = row.leads > 0 ? round1((p / row.leads) * 100) : 0;
+        row.memberPct = row.leads > 0 ? round1((m / row.leads) * 100) : 0;
+      }
     }
+
+    // Render byState a partir de stateLeadsMap (com ou sem cross-source).
+    const byState = Array.from(stateLeadsMap.entries())
+      .map(([code, r]) => ({
+        code,
+        name:      STATE_NAMES[code],
+        count:     r.leads,
+        bookedPct: r.bookedPct ?? null,
+        paidPct:   r.paidPct   ?? null,
+        memberPct: r.memberPct ?? null,
+      }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 8);
 
     return {
       kpis: {
