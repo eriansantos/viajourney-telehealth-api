@@ -228,6 +228,60 @@ export const hintTransformer = {
     const refundRate     = paidMTD.length > 0 ? (refundMTD.length / paidMTD.length) * 100 : 0;
     const chargebackRate = paidMTD.length > 0 ? (cbMTD.length    / paidMTD.length) * 100 : 0;
 
+    // ── Dunning queue — pagamentos falhos agrupados por paciente ─────────────
+    // Inclui falhas dos últimos 60 dias (não só MTD) — janela típica de cobrança.
+    const dunningWindow = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000);
+    const failedRecent = pays.filter(
+      (p) => p.status === "failed" && p._date && p._date >= dunningWindow
+    );
+
+    const patientName = (p) => {
+      const pat = p.patient || {};
+      const full = [pat.first_name, pat.last_name].filter(Boolean).join(" ");
+      return full || pat.name || "Unknown";
+    };
+    const patientId = (p) => p.patient?.id || "unknown";
+
+    const planByPatient = new Map();
+    for (const m of memsNorm) {
+      if (!isActiveNowFn(m)) continue;
+      const owner = m.owner?.id;
+      if (owner && !planByPatient.has(owner)) {
+        planByPatient.set(owner, m.plan?.name || "—");
+      }
+    }
+
+    const dunningMap = new Map();
+    for (const p of failedRecent) {
+      const key = patientId(p);
+      if (!dunningMap.has(key)) {
+        dunningMap.set(key, {
+          patientId: key,
+          patient:   patientName(p),
+          plan:      planByPatient.get(key) || "—",
+          attempts:  0,
+          amount:    0,
+          lastFail:  null,
+        });
+      }
+      const row = dunningMap.get(key);
+      row.attempts += 1;
+      row.amount   += p._amount;
+      if (!row.lastFail || p._date > row.lastFail) row.lastFail = p._date;
+    }
+
+    const dunningQueue = Array.from(dunningMap.values())
+      .map((r) => ({
+        ...r,
+        amount:        Math.round(r.amount * 100) / 100,
+        daysSinceFail: r.lastFail ? Math.floor((now - r.lastFail) / (1000 * 60 * 60 * 24)) : null,
+        lastFail:      r.lastFail ? r.lastFail.toISOString().slice(0, 10) : null,
+      }))
+      .sort((a, b) => b.amount - a.amount);
+
+    const failedAmountMTD = failedMTD.reduce((s, p) => s + p._amount, 0);
+    const recoverableAmount = dunningQueue.reduce((s, r) => s + r.amount, 0);
+
     // ── Revenue trend — 6 meses ────────────────────────────────────────────
     const labels6m = [];
     const revSeries = [];
@@ -279,12 +333,17 @@ export const hintTransformer = {
         refundRate:          round1(refundRate),
         chargebackRate:      round1(chargebackRate),
         deltaPctVsPrev:      round1(deltaPct),
+        failedAmountMTD:     Math.round(failedAmountMTD),
+        failedCountMTD:      failedMTD.length,
+        recoverableAmount:   Math.round(recoverableAmount),
+        dunningCount:        dunningQueue.length,
       },
       trend: {
         labels:  labels6m,
         revenue: revSeries,
       },
       byPlan,
+      dunningQueue,
     };
   },
 };
