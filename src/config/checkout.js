@@ -9,6 +9,10 @@ export const CHECKOUT_CONFIG = {
   physicianId:       Number(process.env.ELATION_PHYSICIAN_ID        || 144048791879682),
   serviceLocationId: Number(process.env.ELATION_SERVICE_LOCATION_ID || 144048787620087),
   elationPublicBase: process.env.ELATION_PUBLIC_BASE || "https://sandbox.elationemr.com",
+  // appointmentTypeId usado para CONSULTAR disponibilidade em todos os planos.
+  // É o mesmo médico/agenda; o tipo específico do plano só importa na hora do booking.
+  // Em sandbox só o tipo "Member" (clube-saude) tem slots configurados.
+  availabilityAppointmentTypeId: Number(process.env.ELATION_AVAILABILITY_TYPE_ID || 144607020515433),
   hintSignupBase:    process.env.HINT_SIGNUP_BASE    || "https://viajourneytelehealth.hint.com/signup",
   // DOIS timezones distintos:
   // - sourceTimezone: como a Elation armazena (config dela está errada — prática é em FL

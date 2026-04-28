@@ -77,11 +77,17 @@ export const checkoutController = {
         email:     contact.email     || email,
         phone:     contact.phone     || "",
         state:     contact.state     || "",
+        flStatus:  contact.flStatus  || null,   // "FL" | "OUT_OF_STATE" | "BR" | null
+        reason:    contact.reason    || "",
         dob:       contact.dob       || "",
         sex:       contact.sex       || "",
         ghlContactId: contact.ghlContactId || null,
       };
+      // Quando flStatus="OUT_OF_STATE", o state US também é obrigatório
+      // pra rotear o atendimento corretamente. FL e BR não precisam (FL é
+      // implícito; BR não tem state US).
       const required = ["firstName", "email", "dob", "sex"];
+      if (patient.flStatus === "OUT_OF_STATE") required.push("state");
       const missing  = required.filter(k => !patient[k]);
 
       res.json({ found: true, patient, complete: missing.length === 0, missing });
@@ -148,15 +154,21 @@ export const checkoutController = {
       const end = new Date(now);
       end.setDate(end.getDate() + days);
 
+      // Usa um appointmentTypeId compartilhado para consultar disponibilidade —
+      // é o mesmo médico/agenda para todos os planos. O tipo específico do plano
+      // só é usado na hora do booking (finalize). Em sandbox só "Member" tem slots.
+      const availTypeId = CHECKOUT_CONFIG.availabilityAppointmentTypeId || plan.appointmentTypeId;
       const response = await elationBooking.getAvailabilities({
-        appointmentTypeId: plan.appointmentTypeId,
+        appointmentTypeId: availTypeId,
         startDate: isoDate(start),
         endDate: isoDate(end),
       });
 
       // A API retorna [{ provider_id, service_location_id, appointment_type_id, available_datetimes:[...] }]
       const buckets = Array.isArray(response?.data) ? response.data : [];
-      const matching = buckets.filter(b => b.appointment_type_id === plan.appointmentTypeId);
+      // Não filtra por appointment_type_id — todos os buckets retornados são válidos
+      // (já filtramos pelo availTypeId na query acima).
+      const matching = buckets;
 
       // Mantém o grid nativo do Elation (15 em 15 min) — mesma UX da página pública
       // /book/{practiceId}. Dedup apenas, pois Elation as vezes retorna slots
@@ -361,9 +373,13 @@ export const checkoutController = {
           // Elation espera aware em sourceTimezone (LA). Shift ET→LA, depois anexa offset LA.
           const laNaive = shiftNaive(slot.datetime, CHECKOUT_CONFIG.displayTimezone, CHECKOUT_CONFIG.sourceTimezone);
           const scheduledDate = toTZAware(laNaive, CHECKOUT_CONFIG.sourceTimezone);
+          // Usa o mesmo appointmentTypeId da consulta de disponibilidade.
+          // O tipo específico do plano pode não estar configurado no sandbox —
+          // em produção ajustar via ELATION_AVAILABILITY_TYPE_ID ou por plano.
+          const bookingTypeId = CHECKOUT_CONFIG.availabilityAppointmentTypeId || plan.appointmentTypeId;
           const result = await elationBooking.createPublicAppointment({
             appointment: {
-              appointment_type_id: plan.appointmentTypeId,
+              appointment_type_id: bookingTypeId,
               scheduled_date:      scheduledDate,
             },
             patient: {
