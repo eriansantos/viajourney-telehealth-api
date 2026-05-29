@@ -41,9 +41,9 @@ function formatDatetime(iso) {
 }
 
 const PLANS = {
-  "consulta-avulsa": { label: "Consulta Avulsa",       badge: "Consulta Única",    icon: "🩺" },
-  "clube-saude":     { label: "Clube Saúde",            badge: "Assinatura Mensal", icon: "💚" },
-  "concierge":       { label: "Via Journey Concierge",  badge: "Assinatura Premium",icon: "⭐" },
+  "consulta-avulsa": { label: "Consulta Avulsa",       badge: "Consulta Única" },
+  "clube-saude":     { label: "Clube Saúde",            badge: "Assinatura Mensal" },
+  "concierge":       { label: "Via Journey Concierge",  badge: "Assinatura Premium" },
 };
 
 function planInfo(slug) {
@@ -158,7 +158,6 @@ function buildHtml({ firstName, planSlug, appointmentDatetime, membershipId }) {
                       <td style="padding:20px 24px">
                         <table width="100%" cellpadding="0" cellspacing="0" role="presentation">
                           <tr>
-                            <td valign="middle" style="font-size:28px;width:44px">${plan.icon}</td>
                             <td valign="middle">
                               <p style="margin:0;font-family:'Poppins',Roboto,sans-serif;
                                          font-size:17px;font-weight:700;color:${C.dark}">
