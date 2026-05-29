@@ -122,7 +122,7 @@ function buildHtml({ firstName, planSlug, appointmentDatetime, membershipId }) {
             <!-- Header com gradiente MIV -->
             <table width="100%" cellpadding="0" cellspacing="0" role="presentation">
               <tr>
-                <td style="background:linear-gradient(135deg,${C.dark} 0%,${C.primary} 60%,${C.lime} 100%);
+                <td style="background:${C.dark};
                             padding:36px 40px 32px;text-align:center">
                   <p style="margin:0 0 12px;font-family:'Poppins',Roboto,sans-serif;
                              font-size:13px;font-weight:600;letter-spacing:2px;
