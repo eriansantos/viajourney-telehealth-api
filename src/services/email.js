@@ -190,11 +190,6 @@ function buildHtml({ firstName, planSlug, appointmentDatetime, membershipId }) {
                     ${slotBlock}
                   </table>
 
-${membershipId ? `
-                  <p style="margin:20px 0 0;font-family:'Poppins',Roboto,sans-serif;
-                             font-size:11px;color:${C.t4}">
-                    Referência: ${membershipId}
-                  </p>` : ""}
 
                 </td>
               </tr>
