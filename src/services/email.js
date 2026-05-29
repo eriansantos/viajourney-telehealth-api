@@ -8,6 +8,25 @@ export function emailIsConfigured() {
   return Boolean(resend);
 }
 
+// ─── Brand tokens (espelho de src/lib/brand.js no frontend) ──────────────────
+const C = {
+  dark:    "#003d31",
+  primary: "#1fb54d",
+  lime:    "#91c563",
+  g100:    "#eef7e0",
+  g50:     "#f5fbee",
+  border:  "#e0e8e0",
+  bg:      "#f5f7f5",
+  t1:      "#1a2e1a",
+  t3:      "#5a6b5a",
+  t4:      "#8a9e8a",
+};
+
+const LOGO_URL  = "https://cdn.landingpage.app.br/lp.viajourneytelehealth.com/1774648400/imagens/desktop/443515-89645b51570420406bca3e99eae41d73.png";
+const FONT_URL  = "https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap";
+const SUPPORT   = "care@viajourneytelehealth.com";
+const PORTAL    = "https://viajourneytelehealth.com";
+
 const MONTHS_PT = [
   "janeiro","fevereiro","março","abril","maio","junho",
   "julho","agosto","setembro","outubro","novembro","dezembro",
@@ -18,85 +37,234 @@ function formatDatetime(iso) {
   const [datePart, timePart] = iso.split("T");
   const [y, m, d] = datePart.split("-").map(Number);
   const time = (timePart || "").slice(0, 5);
-  return `${d} de ${MONTHS_PT[m - 1]} de ${y} às ${time} (horário de Brasília/ET)`;
+  return `${d} de ${MONTHS_PT[m - 1]} de ${y} às ${time} (ET)`;
 }
 
-function planDescription(planSlug) {
-  const map = {
-    "consulta-avulsa": { label: "Consulta Avulsa", type: "consulta única" },
-    "clube-saude":     { label: "Clube Saúde",     type: "assinatura mensal" },
-    "concierge":       { label: "Via Journey Concierge", type: "assinatura mensal" },
-  };
-  return map[planSlug] || { label: planSlug, type: "plano" };
+const PLANS = {
+  "consulta-avulsa": { label: "Consulta Avulsa",       badge: "Consulta Única",    icon: "🩺" },
+  "clube-saude":     { label: "Clube Saúde",            badge: "Assinatura Mensal", icon: "💚" },
+  "concierge":       { label: "Via Journey Concierge",  badge: "Assinatura Premium",icon: "⭐" },
+};
+
+function planInfo(slug) {
+  return PLANS[slug] || { label: slug, badge: "Plano", icon: "✅" };
 }
 
 function buildHtml({ firstName, planSlug, appointmentDatetime, membershipId }) {
-  const plan = planDescription(planSlug);
-  const slotLine = appointmentDatetime
-    ? `<p style="margin:0 0 8px">🗓️ <strong>Sua primeira consulta:</strong> ${formatDatetime(appointmentDatetime)}</p>`
-    : `<p style="margin:0 0 8px">📅 Você pode <strong>agendar sua consulta</strong> a qualquer momento respondendo este email ou acessando o portal.</p>`;
+  const plan     = planInfo(planSlug);
+  const slotText = appointmentDatetime ? formatDatetime(appointmentDatetime) : null;
+
+  const slotBlock = slotText
+    ? `
+      <tr>
+        <td style="padding:0 0 10px">
+          <table width="100%" cellpadding="0" cellspacing="0">
+            <tr>
+              <td width="36" valign="top" style="padding-top:2px;font-size:20px">🗓️</td>
+              <td style="font-family:'Poppins',Roboto,sans-serif;font-size:14px;color:${C.t1};line-height:1.5">
+                <strong>Sua primeira consulta</strong><br>
+                <span style="color:${C.t3}">${slotText}</span>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>`
+    : `
+      <tr>
+        <td style="padding:0 0 10px">
+          <table width="100%" cellpadding="0" cellspacing="0">
+            <tr>
+              <td width="36" valign="top" style="padding-top:2px;font-size:20px">📅</td>
+              <td style="font-family:'Poppins',Roboto,sans-serif;font-size:14px;color:${C.t3};line-height:1.5">
+                Agende sua consulta a qualquer momento respondendo este email.
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>`;
 
   return `<!DOCTYPE html>
-<html lang="pt-BR">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="margin:0;padding:0;background:#f5f5f5;font-family:'Segoe UI',Roboto,sans-serif">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f5f5f5;padding:32px 16px">
+<html lang="pt-BR" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Confirmação Via Journey</title>
+  <link href="${FONT_URL}" rel="stylesheet">
+  <style>
+    @import url('${FONT_URL}');
+    body { margin:0; padding:0; background:${C.bg}; }
+    * { box-sizing:border-box; }
+  </style>
+</head>
+<body style="margin:0;padding:0;background:${C.bg};font-family:'Poppins',Roboto,'Helvetica Neue',sans-serif">
+
+  <!-- Wrapper -->
+  <table width="100%" cellpadding="0" cellspacing="0" role="presentation"
+         style="background:${C.bg};padding:40px 16px 48px">
     <tr><td align="center">
-      <table width="100%" style="max-width:560px;background:#ffffff;border-radius:16px;overflow:hidden">
+      <table width="100%" style="max-width:580px" cellpadding="0" cellspacing="0" role="presentation">
 
-        <!-- Header -->
+        <!-- ── LOGO PRÉ-CARD ─────────────────────────────────────────── -->
         <tr>
-          <td style="background:#009a58;padding:28px 32px;text-align:center">
-            <img src="https://viajourney-checkout-prod.vercel.app/logo-alt.png"
-                 alt="Via Journey Telehealth" height="40"
-                 style="display:block;margin:0 auto 8px">
-            <p style="margin:0;color:#ffffff;font-size:13px;letter-spacing:1px;text-transform:uppercase;opacity:.85">
-              Confirmação de Plano
-            </p>
+          <td align="center" style="padding-bottom:24px">
+            <img src="${LOGO_URL}"
+                 alt="Via Journey Telehealth" height="44"
+                 style="display:block;height:44px;width:auto">
           </td>
         </tr>
 
-        <!-- Body -->
+        <!-- ── CARD ──────────────────────────────────────────────────── -->
         <tr>
-          <td style="padding:32px 32px 24px">
-            <h1 style="margin:0 0 16px;font-size:22px;color:#003d31;font-weight:700">
-              Bem-vindo(a), ${firstName}! 🎉
-            </h1>
-            <p style="margin:0 0 20px;font-size:15px;color:#444;line-height:1.6">
-              Seu <strong>${plan.label}</strong> foi ativado com sucesso.
-              Você agora tem acesso à Via Journey Telehealth.
-            </p>
+          <td style="background:#ffffff;border-radius:20px;overflow:hidden;
+                     box-shadow:0 4px 24px rgba(0,61,49,.10)">
 
-            <!-- Detalhes -->
-            <div style="background:#f0faf5;border-radius:10px;padding:18px 20px;margin-bottom:24px;font-size:14px;color:#333;line-height:1.8">
-              <p style="margin:0 0 8px">✅ <strong>Plano:</strong> ${plan.label} (${plan.type})</p>
-              ${slotLine}
-              ${membershipId ? `<p style="margin:0;color:#888;font-size:12px">ID da assinatura: ${membershipId}</p>` : ""}
-            </div>
+            <!-- Header com gradiente MIV -->
+            <table width="100%" cellpadding="0" cellspacing="0" role="presentation">
+              <tr>
+                <td style="background:linear-gradient(135deg,${C.dark} 0%,${C.primary} 60%,${C.lime} 100%);
+                            padding:36px 40px 32px;text-align:center">
+                  <p style="margin:0 0 12px;font-family:'Poppins',Roboto,sans-serif;
+                             font-size:13px;font-weight:600;letter-spacing:2px;
+                             text-transform:uppercase;color:rgba(255,255,255,.75)">
+                    Confirmação de Plano
+                  </p>
+                  <h1 style="margin:0;font-family:'Poppins',Roboto,sans-serif;
+                             font-size:28px;font-weight:700;color:#ffffff;line-height:1.2">
+                    Bem-vindo(a),<br>${firstName}! 🎉
+                  </h1>
+                </td>
+              </tr>
+            </table>
 
-            <!-- Próximos passos -->
-            <h2 style="margin:0 0 12px;font-size:16px;color:#003d31">Próximos passos</h2>
-            <ol style="margin:0 0 24px;padding-left:20px;font-size:14px;color:#444;line-height:1.8">
-              <li>Você receberá um convite para criar seu perfil no portal de pacientes.</li>
-              <li>Verifique sua caixa de entrada para confirmar o agendamento.</li>
-              <li>Em caso de dúvidas, responda este email — estamos aqui.</li>
-            </ol>
+            <!-- Corpo -->
+            <table width="100%" cellpadding="0" cellspacing="0" role="presentation">
+              <tr>
+                <td style="padding:32px 40px 28px">
 
-            <a href="https://viajourneytelehealth.com"
-               style="display:inline-block;background:#009a58;color:#ffffff;font-size:15px;font-weight:600;
-                      padding:12px 28px;border-radius:8px;text-decoration:none;box-shadow:0 4px 0 #003d31">
-              Acessar Portal
-            </a>
+                  <!-- Mensagem principal -->
+                  <p style="margin:0 0 24px;font-family:'Poppins',Roboto,sans-serif;
+                             font-size:15px;color:${C.t3};line-height:1.7">
+                    Seu plano foi ativado com sucesso. Você agora faz parte da
+                    <strong style="color:${C.t1}">Via Journey Telehealth</strong> e tem acesso a
+                    cuidados de saúde de qualidade onde quer que esteja.
+                  </p>
+
+                  <!-- Badge do plano -->
+                  <table width="100%" cellpadding="0" cellspacing="0" role="presentation"
+                         style="background:${C.g50};border:1px solid ${C.border};
+                                border-radius:12px;margin-bottom:24px">
+                    <tr>
+                      <td style="padding:20px 24px">
+                        <table width="100%" cellpadding="0" cellspacing="0" role="presentation">
+                          <tr>
+                            <td valign="middle" style="font-size:28px;width:44px">${plan.icon}</td>
+                            <td valign="middle">
+                              <p style="margin:0;font-family:'Poppins',Roboto,sans-serif;
+                                         font-size:17px;font-weight:700;color:${C.dark}">
+                                ${plan.label}
+                              </p>
+                              <p style="margin:4px 0 0;font-family:'Poppins',Roboto,sans-serif;
+                                         font-size:12px;font-weight:600;letter-spacing:1px;
+                                         text-transform:uppercase;color:${C.primary}">
+                                ${plan.badge}
+                              </p>
+                            </td>
+                            <td align="right" valign="middle">
+                              <span style="display:inline-block;background:${C.primary};color:#fff;
+                                           font-family:'Poppins',Roboto,sans-serif;font-size:11px;
+                                           font-weight:700;letter-spacing:.5px;padding:4px 12px;
+                                           border-radius:20px">
+                                ATIVO
+                              </span>
+                            </td>
+                          </tr>
+                        </table>
+                      </td>
+                    </tr>
+                  </table>
+
+                  <!-- Detalhes da consulta -->
+                  <table width="100%" cellpadding="0" cellspacing="0" role="presentation"
+                         style="margin-bottom:24px">
+                    ${slotBlock}
+                  </table>
+
+                  <!-- Divisor -->
+                  <table width="100%" cellpadding="0" cellspacing="0" role="presentation"
+                         style="margin-bottom:24px">
+                    <tr>
+                      <td style="height:1px;background:${C.border}"></td>
+                    </tr>
+                  </table>
+
+                  <!-- Próximos passos -->
+                  <p style="margin:0 0 14px;font-family:'Poppins',Roboto,sans-serif;
+                             font-size:14px;font-weight:700;color:${C.dark};
+                             letter-spacing:.5px;text-transform:uppercase">
+                    Próximos passos
+                  </p>
+
+                  <table width="100%" cellpadding="0" cellspacing="0" role="presentation"
+                         style="margin-bottom:28px">
+                    ${[
+                      ["📬", "Você receberá um convite para criar seu perfil no portal de pacientes (Elation Passport)."],
+                      ["📋", "Confirme seu agendamento quando receber o email do portal."],
+                      ["💬", "Dúvidas? Responda este email — respondemos em até 24h."],
+                    ].map(([icon, text]) => `
+                    <tr>
+                      <td style="padding:0 0 12px">
+                        <table width="100%" cellpadding="0" cellspacing="0">
+                          <tr>
+                            <td width="32" valign="top" style="font-size:16px;padding-top:1px">${icon}</td>
+                            <td style="font-family:'Poppins',Roboto,sans-serif;font-size:14px;
+                                       color:${C.t3};line-height:1.6">${text}</td>
+                          </tr>
+                        </table>
+                      </td>
+                    </tr>`).join("")}
+                  </table>
+
+                  <!-- CTA -->
+                  <table cellpadding="0" cellspacing="0" role="presentation">
+                    <tr>
+                      <td style="border-radius:10px;background:${C.primary};
+                                  box-shadow:0 5px 0 ${C.dark}">
+                        <a href="${PORTAL}"
+                           style="display:inline-block;padding:14px 32px;
+                                  font-family:'Poppins',Roboto,sans-serif;
+                                  font-size:15px;font-weight:700;color:#ffffff;
+                                  text-decoration:none;letter-spacing:.3px">
+                          Acessar Portal →
+                        </a>
+                      </td>
+                    </tr>
+                  </table>
+
+                  ${membershipId ? `
+                  <p style="margin:20px 0 0;font-family:'Poppins',Roboto,sans-serif;
+                             font-size:11px;color:${C.t4}">
+                    Referência: ${membershipId}
+                  </p>` : ""}
+
+                </td>
+              </tr>
+            </table>
+
           </td>
         </tr>
 
-        <!-- Footer -->
+        <!-- ── FOOTER ─────────────────────────────────────────────────── -->
         <tr>
-          <td style="padding:16px 32px 28px;border-top:1px solid #eee">
-            <p style="margin:0;font-size:12px;color:#aaa;line-height:1.6;text-align:center">
-              Via Journey Telehealth · Lakewood Ranch, FL<br>
-              Dúvidas? Responda este email ou escreva para
-              <a href="mailto:contact@viajourneytelehealth.com" style="color:#009a58">contact@viajourneytelehealth.com</a>
+          <td style="padding:24px 16px 0;text-align:center">
+            <p style="margin:0 0 6px;font-family:'Poppins',Roboto,sans-serif;
+                       font-size:12px;color:${C.t4}">
+              Via Journey Telehealth · Lakewood Ranch, FL
+            </p>
+            <p style="margin:0;font-family:'Poppins',Roboto,sans-serif;
+                       font-size:12px;color:${C.t4}">
+              Dúvidas? <a href="mailto:${SUPPORT}"
+                          style="color:${C.primary};text-decoration:none">${SUPPORT}</a>
             </p>
           </td>
         </tr>
@@ -104,6 +272,7 @@ function buildHtml({ firstName, planSlug, appointmentDatetime, membershipId }) {
       </table>
     </td></tr>
   </table>
+
 </body>
 </html>`;
 }
@@ -114,11 +283,12 @@ export async function sendConfirmationEmail({ to, firstName, planSlug, appointme
     return { skipped: true };
   }
 
-  const plan = planDescription(planSlug);
-  const subject = `✅ ${plan.label} ativado — Bem-vindo(a) à Via Journey!`;
+  const plan = planInfo(planSlug);
+  const subject = `${plan.icon} ${plan.label} ativado — Bem-vindo(a) à Via Journey!`;
 
   const { data, error } = await resend.emails.send({
-    from: "Via Journey Telehealth <noreply@viajourneytelehealth.com>",
+    from:    "Via Journey Telehealth <noreply@viajourneytelehealth.com>",
+    replyTo: SUPPORT,
     to,
     subject,
     html: buildHtml({ firstName, planSlug, appointmentDatetime, membershipId }),
