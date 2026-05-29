@@ -22,7 +22,7 @@ const C = {
   t4:      "#8a9e8a",
 };
 
-const LOGO_URL  = "https://cdn.landingpage.app.br/lp.viajourneytelehealth.com/1774648400/imagens/desktop/443515-89645b51570420406bca3e99eae41d73.png";
+const LOGO_URL  = "https://viajourney-checkout-prod.vercel.app/logo-alt.png";
 const FONT_URL  = "https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap";
 const SUPPORT   = "care@viajourneytelehealth.com";
 const PORTAL    = "https://viajourneytelehealth.com";
