@@ -109,30 +109,17 @@ async function hintPost(path, body) {
   return res.json();
 }
 
-// ─── Cache de planos do Hint (TTL 5 min) ─────────────────────────────────────
-let _plansCache = null;
-let _plansCachedAt = 0;
-const PLANS_TTL_MS = 5 * 60 * 1000;
-
-async function fetchPlans() {
-  const now = Date.now();
-  if (_plansCache && now - _plansCachedAt < PLANS_TTL_MS) return _plansCache;
-  const { data } = await hintGet("/api/provider/plans");
-  _plansCache = Array.isArray(data) ? data : [];
-  _plansCachedAt = now;
-  return _plansCache;
-}
-
 /**
- * Resolve o ID do plano Hint pelo nome exato.
+ * Resolve o ID do plano Hint pelo nome exato via API.
  * Funciona em sandbox e produção sem nenhuma config extra.
  * @param {string} name  Nome exato do plano no Hint (ex: "Clube Saúde")
  * @returns {Promise<string>} plan id (pln-…)
  */
 export async function resolveHintPlanId(name) {
-  const plans = await fetchPlans();
+  const { data } = await hintGet("/api/provider/plans");
+  const plans = Array.isArray(data) ? data : [];
   const plan  = plans.find(p => p.name === name);
-  if (!plan) throw new Error(`Hint plan não encontrado: "${name}". Planos disponíveis: ${plans.map(p => p.name).join(", ")}`);
+  if (!plan) throw new Error(`Hint plan não encontrado: "${name}". Disponíveis: ${plans.map(p => p.name).join(", ")}`);
   return plan.id;
 }
 
