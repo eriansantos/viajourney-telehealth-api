@@ -131,7 +131,7 @@ function buildHtml({ firstName, planSlug, appointmentDatetime, membershipId }) {
                   </p>
                   <h1 style="margin:0;font-family:'Poppins',Roboto,sans-serif;
                              font-size:28px;font-weight:700;color:#ffffff;line-height:1.2">
-                    Bem-vindo(a),<br>${firstName}! 🎉
+                    Bem-vindo(a) à Via Journey,<br>${firstName}!
                   </h1>
                 </td>
               </tr>
