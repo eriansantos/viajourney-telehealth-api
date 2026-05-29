@@ -1,65 +1,45 @@
-// Configuração do checkout público da ViaJourney
-// Mapeia cada plano do checkout para o appointment_type do Elation e o signup URL do Hint.
+function requireEnv(key) {
+  const val = process.env[key];
+  if (!val) throw new Error(`Missing required env var: ${key}`);
+  return val;
+}
+function envInt(key) { return Number(requireEnv(key)); }
 
 export const CHECKOUT_CONFIG = {
-  // practiceId é unificado: a MESMA prática atende a booking pública /book/api
-  // e a OAuth /api/2.0/*. Descoberto empiricamente — antes usávamos uma prática
-  // legacy separada (1180058828472324), mas essa não dispara emails do Passport.
-  practiceId:        Number(process.env.ELATION_PRACTICE_ID         || 144048787554308),
-  physicianId:       Number(process.env.ELATION_PHYSICIAN_ID        || 144048791879682),
-  serviceLocationId: Number(process.env.ELATION_SERVICE_LOCATION_ID || 144048787620087),
-  elationPublicBase: process.env.ELATION_PUBLIC_BASE || "https://sandbox.elationemr.com",
-  // appointmentTypeId usado para CONSULTAR disponibilidade em todos os planos.
-  // É o mesmo médico/agenda; o tipo específico do plano só importa na hora do booking.
-  // Em sandbox só o tipo "Member" (clube-saude) tem slots configurados.
-  availabilityAppointmentTypeId: Number(process.env.ELATION_AVAILABILITY_TYPE_ID || 144607020515433),
-  hintSignupBase:    process.env.HINT_SIGNUP_BASE    || "https://viajourneytelehealth.hint.com/signup",
-  // DOIS timezones distintos:
-  // - sourceTimezone: como a Elation armazena (config dela está errada — prática é em FL
-  //   mas cadastrada como LA). Usado pra interpretar os naive datetimes de /book/api/.../availabilities
-  //   e pra reconstruir a offset correta antes de POSTar em /book/api/appointments.
-  // - displayTimezone: como mostrar pro usuário. A prática é fisicamente em FL e os pacientes
-  //   no Brasil — ET faz sentido pra ambos (BR e clínica). O frontend exibe nesse TZ.
-  sourceTimezone:  "America/Los_Angeles",
-  displayTimezone: "America/New_York",
-  timezone:        "America/New_York", // alias legacy — display
-
-
-  // Aliases de retrocompatibilidade — código antigo ainda usa .oauth.*
-  // TODO: remover após migrar todos os consumers.
-  oauth: {
-    practiceId:        Number(process.env.ELATION_PRACTICE_ID         || 144048787554308),
-    physicianId:       Number(process.env.ELATION_PHYSICIAN_ID        || 144048791879682),
-    serviceLocationId: Number(process.env.ELATION_SERVICE_LOCATION_ID || 144048787620087),
-  },
+  practiceId:                   envInt("ELATION_PRACTICE_ID"),
+  physicianId:                  envInt("ELATION_PHYSICIAN_ID"),
+  serviceLocationId:            envInt("ELATION_SERVICE_LOCATION_ID"),
+  elationPublicBase:            requireEnv("ELATION_PUBLIC_BASE"),
+  availabilityAppointmentTypeId:envInt("ELATION_AVAILABILITY_TYPE_ID"),
+  // sourceTimezone: como a Elation armazena internamente (config da prática está
+  // errada — FL mas cadastrada como LA). Usado para interpretar datetimes naive.
+  // displayTimezone: como mostrar ao paciente (ET — FL + pacientes no Brasil).
+  sourceTimezone:  process.env.ELATION_SOURCE_TZ  || "America/Los_Angeles",
+  displayTimezone: process.env.ELATION_DISPLAY_TZ || "America/New_York",
+  timezone:        process.env.ELATION_DISPLAY_TZ || "America/New_York",
 };
 
-// Metadados locais por slug — apenas o que o Hint não fornece:
-// appointmentTypeId (Elation), durationMin e oneOff.
-// Os planos em si (id, name, preço) vêm sempre da API do Hint.
-// IDs descobertos via /api/2.0/appointment_types/ — só esses têm is_telehealth:true
-// e patient_form_ids configurados (dispara Passport + emails).
+// Metadados locais por slug — apenas o que o Hint não fornece.
+// appointmentTypeId vem de env vars (diferentes por ambiente Elation).
+// durationMin e oneOff são constantes de negócio (não mudam entre ambientes).
 export const PLAN_META = {
   "consulta-avulsa": {
-    slug: "consulta-avulsa",
-    appointmentTypeId: 144607022809193,
-    appointmentTypeName: "One Time",
-    durationMin: 15,
-    oneOff: true,
+    slug:              "consulta-avulsa",
+    appointmentTypeId: envInt("ELATION_APPT_TYPE_CONSULTA_AVULSA"),
+    durationMin:       15,
+    oneOff:            true,
   },
   "clube-saude": {
-    slug: "clube-saude",
-    appointmentTypeId: 144607020515433,
-    appointmentTypeName: "Member",
-    durationMin: 30,
-    oneOff: false,
+    slug:              "clube-saude",
+    appointmentTypeId: envInt("ELATION_APPT_TYPE_CLUBE_SAUDE"),
+    durationMin:       30,
+    oneOff:            false,
   },
   "concierge": {
-    slug: "concierge",
-    appointmentTypeId: 144607021105257,
-    appointmentTypeName: "Concierge",
-    durationMin: 40,
-    oneOff: false,
+    slug:              "concierge",
+    appointmentTypeId: envInt("ELATION_APPT_TYPE_CONCIERGE"),
+    durationMin:       40,
+    oneOff:            false,
   },
 };
 
