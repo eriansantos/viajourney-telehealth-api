@@ -6,6 +6,7 @@ import { CHECKOUT_CONFIG, PLANS, getPlan } from "../config/checkout.js";
 import { elationBooking } from "../services/elationBooking.js";
 import { lookupByEmail, ghlIsConfigured } from "../services/ghl.js";
 import { hintService, hintIsConfigured } from "../services/hint.js";
+import { sendConfirmationEmail } from "../services/email.js";
 
 function isoDate(d) { return d.toISOString().slice(0, 10); }
 
@@ -407,11 +408,26 @@ export const checkoutController = {
         }
       }
 
+      // 4) Email de confirmação — fire-and-forget (não bloqueia a resposta)
+      let email = { skipped: true };
+      if (patient?.email) {
+        sendConfirmationEmail({
+          to:                  patient.email,
+          firstName:           patient.firstName || "Paciente",
+          planSlug,
+          appointmentDatetime: appointment?.datetime || null,
+          membershipId:        membership?.id || null,
+        })
+          .then(r => { email = r; })
+          .catch(err => console.error("[checkout.finalize] email falhou:", err.message));
+      }
+
       res.json({
         ok: true,
         paymentMethod: { id: paymentMethod?.id, lastFour: paymentMethod?.last_four, type: paymentMethod?.type },
         membership:    { id: membership?.id, status: membership?.status, startDate: membership?.start_date },
         appointment,
+        email,
       });
     } catch (e) {
       console.error("[checkout.finalize]", e);
