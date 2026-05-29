@@ -109,8 +109,8 @@ function buildHtml({ firstName, planSlug, appointmentDatetime, membershipId }) {
         <tr>
           <td align="center" style="padding-bottom:24px">
             <img src="${LOGO_URL}"
-                 alt="Via Journey Telehealth" height="44"
-                 style="display:block;height:44px;width:auto">
+                 alt="Via Journey Telehealth" height="72"
+                 style="display:block;height:72px;width:auto">
           </td>
         </tr>
 
@@ -190,23 +190,7 @@ function buildHtml({ firstName, planSlug, appointmentDatetime, membershipId }) {
                     ${slotBlock}
                   </table>
 
-                  <!-- CTA -->
-                  <table cellpadding="0" cellspacing="0" role="presentation">
-                    <tr>
-                      <td style="border-radius:10px;background:${C.primary};
-                                  box-shadow:0 5px 0 ${C.dark}">
-                        <a href="${PORTAL}"
-                           style="display:inline-block;padding:14px 32px;
-                                  font-family:'Poppins',Roboto,sans-serif;
-                                  font-size:15px;font-weight:700;color:#ffffff;
-                                  text-decoration:none;letter-spacing:.3px">
-                          Acessar Portal →
-                        </a>
-                      </td>
-                    </tr>
-                  </table>
-
-                  ${membershipId ? `
+${membershipId ? `
                   <p style="margin:20px 0 0;font-family:'Poppins',Roboto,sans-serif;
                              font-size:11px;color:${C.t4}">
                     Referência: ${membershipId}
