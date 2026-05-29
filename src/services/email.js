@@ -287,7 +287,7 @@ export async function sendConfirmationEmail({ to, firstName, planSlug, appointme
   const subject = `${plan.icon} ${plan.label} ativado — Bem-vindo(a) à Via Journey!`;
 
   const { data, error } = await resend.emails.send({
-    from:    "Via Journey Telehealth <noreply@viajourneytelehealth.com>",
+    from:    process.env.RESEND_FROM || "Via Journey Telehealth <onboarding@resend.dev>",
     replyTo: SUPPORT,
     to,
     subject,
