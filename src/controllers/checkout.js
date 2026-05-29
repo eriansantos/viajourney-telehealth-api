@@ -2,10 +2,10 @@
 // Fonte dos slots: API pública /book/api do Elation (sem credencial).
 // Fonte dos dados do paciente: URL params da LP (provisório) — migração futura para GHL por email.
 
-import { CHECKOUT_CONFIG, PLANS, getPlan } from "../config/checkout.js";
+import { CHECKOUT_CONFIG, PLAN_META, getPlanMeta, slugFromHintName } from "../config/checkout.js";
 import { elationBooking } from "../services/elationBooking.js";
 import { lookupByEmail, ghlIsConfigured } from "../services/ghl.js";
-import { hintService, hintIsConfigured, resolveHintPlanId } from "../services/hint.js";
+import { hintService, hintIsConfigured } from "../services/hint.js";
 import { sendConfirmationEmail } from "../services/email.js";
 
 function isoDate(d) { return d.toISOString().slice(0, 10); }
@@ -96,42 +96,43 @@ export const checkoutController = {
   },
 
   /**
-   * GET /checkout/plans — retorna catálogo público de planos com preço real do Hint.
-   * Para cada plano, chama POST /quotes no Hint (age=35, period=1 mês) pra obter
-   * rate_in_cents + billing_period + registration_fee. Retorna metadados locais
-   * (slug, name, durationMin, oneOff) merjados com preço remoto.
+   * GET /checkout/plans — busca planos disponíveis do Hint e enriquece com
+   * metadados locais (slug, appointmentTypeId, durationMin, oneOff).
+   * O preço vem do Hint via /quotes. O id do plano vem do Hint.
    */
   async plans(_req, res, next) {
     try {
+      const hintPlans = hintIsConfigured() ? await hintService.getPlans() : [];
+
       const plans = await Promise.all(
-        Object.values(PLANS).map(async (p) => {
+        hintPlans.map(async (hp) => {
+          const slug = slugFromHintName(hp.name);
+          const meta = slug ? getPlanMeta(slug) : null;
+
           let priceCents = null;
           let billingPeriod = null;
           let registrationFeeCents = 0;
 
-          if (hintIsConfigured()) {
-            try {
-              const hintPlanId = await resolveHintPlanId(p.hintPlanName);
-              const quote = await hintService.createQuote(hintPlanId, { age: 35, periodInMonths: 1 });
-              priceCents           = quote?.ongoing_amount_in_cents ?? null;
-              billingPeriod        = quote?.billing_period ?? null;
-              registrationFeeCents = quote?.registration_fee_in_cents ?? 0;
-            } catch (err) {
-              console.warn(`[checkout.plans] quote falhou para ${p.slug}:`, err.message);
-            }
+          try {
+            const quote = await hintService.createQuote(hp.id, { age: 35, periodInMonths: 1 });
+            priceCents           = quote?.ongoing_amount_in_cents ?? null;
+            billingPeriod        = quote?.billing_period ?? null;
+            registrationFeeCents = quote?.registration_fee_in_cents ?? 0;
+          } catch (err) {
+            console.warn(`[checkout.plans] quote falhou para ${hp.name}:`, err.message);
           }
 
           return {
-            slug: p.slug,
-            name: p.name,
-            durationMin: p.durationMin,
-            oneOff: p.oneOff,
+            id:   hp.id,
+            slug: slug || hp.name.toLowerCase().replace(/\s+/g, "-"),
+            name: hp.name,
+            durationMin:          meta?.durationMin ?? null,
+            oneOff:               meta?.oneOff ?? false,
+            appointmentTypeId:    meta?.appointmentTypeId ?? null,
             priceCents,
-            billingPeriod,              // "month" | null
+            billingPeriod,
             registrationFeeCents,
-            // recurring derivado: se oneOff=true a UI mostra como avulsa,
-            // mesmo que o Hint tecnicamente trate como plano mensal.
-            recurring: p.oneOff ? false : (billingPeriod || "monthly"),
+            recurring: meta?.oneOff ? false : (billingPeriod || "monthly"),
           };
         })
       );
@@ -148,18 +149,15 @@ export const checkoutController = {
     try {
       const planSlug = String(req.query.plan || "");
       const days = Math.min(Number(req.query.days || 14), 30);
-      const plan = getPlan(planSlug);
-      if (!plan) return res.status(400).json({ error: `Unknown plan slug: ${planSlug}` });
+      const meta = getPlanMeta(planSlug);
+      if (!meta) return res.status(400).json({ error: `Unknown plan slug: ${planSlug}` });
 
       const now = new Date();
       const start = new Date(now);
       const end = new Date(now);
       end.setDate(end.getDate() + days);
 
-      // Usa um appointmentTypeId compartilhado para consultar disponibilidade —
-      // é o mesmo médico/agenda para todos os planos. O tipo específico do plano
-      // só é usado na hora do booking (finalize). Em sandbox só "Member" tem slots.
-      const availTypeId = CHECKOUT_CONFIG.availabilityAppointmentTypeId || plan.appointmentTypeId;
+      const availTypeId = CHECKOUT_CONFIG.availabilityAppointmentTypeId || meta.appointmentTypeId;
       const response = await elationBooking.getAvailabilities({
         appointmentTypeId: availTypeId,
         startDate: isoDate(start),
@@ -203,10 +201,10 @@ export const checkoutController = {
         }));
 
       res.json({
-        plan: { slug: plan.slug, name: plan.name, durationMin: plan.durationMin },
+        plan: { slug: meta.slug, durationMin: meta.durationMin },
         timezone: CHECKOUT_CONFIG.displayTimezone,
         practiceId: CHECKOUT_CONFIG.practiceId,
-        appointmentTypeId: plan.appointmentTypeId,
+        appointmentTypeId: meta.appointmentTypeId,
         days: daysOut,
       });
     } catch (e) { next(e); }
@@ -225,7 +223,7 @@ export const checkoutController = {
         return res.status(400).json({ error: "planSlug e patient.email são obrigatórios" });
       }
       // slot é opcional: usuário pode optar por agendar depois do pagamento.
-      const plan = getPlan(planSlug);
+      const plan = getPlanMeta(planSlug);
       if (!plan) return res.status(400).json({ error: `Unknown plan slug: ${planSlug}` });
 
       // Enriquecer com GHL se disponível (no futuro). Por ora, usa o patient do body.
@@ -237,11 +235,11 @@ export const checkoutController = {
 
       const appointmentPayload = slot?.datetime ? {
         practice_id: CHECKOUT_CONFIG.practiceId,
-        appointment_type_id: plan.appointmentTypeId,
+        appointment_type_id: meta?.appointmentTypeId ?? plan?.appointmentTypeId,
         physician_id: slot.providerId,
         service_location_id: slot.serviceLocationId,
         scheduled_date: slot.datetime,
-        duration: plan.durationMin,
+        duration: meta?.durationMin ?? 30,
         patient: {
           first_name: enriched.firstName,
           last_name: enriched.lastName,
@@ -249,7 +247,7 @@ export const checkoutController = {
           phone: enriched.phone,
           dob: enriched.dob,
         },
-        reason: enriched.reason || plan.name,
+        reason: enriched.reason || planSlug || "Consulta",
       } : null;
 
       // IMPORTANTE — sobre a criação do appointment:
@@ -284,22 +282,19 @@ export const checkoutController = {
 
   /**
    * POST /checkout/setup-intent
-   * Body: { planSlug, patient: { firstName, lastName, email, dob, phone, state } }
+   * Body: { planId, planSlug, patient: { firstName, lastName, email, dob, phone, state } }
+   * planId: ID do plano no Hint (vem do GET /checkout/plans)
    * Cria paciente no Hint + setup intent do Rainforest.
-   * Retorna { patientId, session_key, payment_method_config_id, allowed_methods }
-   * que o frontend usa pra renderizar o <rainforest-payment>.
    */
   async setupIntent(req, res, next) {
     try {
       if (!hintIsConfigured()) {
         return res.status(503).json({ error: "Hint não configurado" });
       }
-      const { planSlug, patient } = req.body || {};
-      if (!planSlug || !patient?.email || !patient?.firstName) {
-        return res.status(400).json({ error: "planSlug, patient.email e patient.firstName são obrigatórios" });
+      const { planId, planSlug, patient } = req.body || {};
+      if (!planId || !patient?.email || !patient?.firstName) {
+        return res.status(400).json({ error: "planId, patient.email e patient.firstName são obrigatórios" });
       }
-      const plan = getPlan(planSlug);
-      if (!plan) return res.status(400).json({ error: `Unknown plan slug: ${planSlug}` });
 
       // 1) Criar paciente no Hint
       const hintPatient = await hintService.createPatient({
@@ -319,7 +314,8 @@ export const checkoutController = {
 
       res.json({
         patientId: hintPatient.id,
-        planSlug: plan.slug,
+        planId,
+        planSlug: planSlug || null,
         setupIntent: {
           sessionKey:             intent.session_key,
           paymentMethodConfigId:  intent.payment_method_config_id,
@@ -343,21 +339,19 @@ export const checkoutController = {
       if (!hintIsConfigured()) {
         return res.status(503).json({ error: "Hint não configurado" });
       }
-      const { patientId, planSlug, rainforestId, periodInMonths = 1, startDate, slot, patient } = req.body || {};
-      if (!patientId || !planSlug || !rainforestId) {
-        return res.status(400).json({ error: "patientId, planSlug e rainforestId são obrigatórios" });
+      const { patientId, planId, planSlug, rainforestId, periodInMonths = 1, startDate, slot, patient } = req.body || {};
+      if (!patientId || !planId || !rainforestId) {
+        return res.status(400).json({ error: "patientId, planId e rainforestId são obrigatórios" });
       }
-      const plan = getPlan(planSlug);
-      if (!plan) return res.status(400).json({ error: `Unknown plan slug: ${planSlug}` });
+      const meta = planSlug ? getPlanMeta(planSlug) : null;
 
       // 1) Anexar método de pagamento ao paciente
       const paymentMethod = await hintService.createPaymentMethod(patientId, rainforestId);
 
-      // 2) Criar membership
-      const hintPlanId = await resolveHintPlanId(plan.hintPlanName);
+      // 2) Criar membership usando o planId do Hint recebido do frontend
       const today = new Date().toISOString().slice(0, 10);
       const membership = await hintService.createMembership({
-        planId:         hintPlanId,
+        planId,
         patientId,
         startDate:      startDate || today,
         periodInMonths,
@@ -379,7 +373,7 @@ export const checkoutController = {
           // Usa o mesmo appointmentTypeId da consulta de disponibilidade.
           // O tipo específico do plano pode não estar configurado no sandbox —
           // em produção ajustar via ELATION_AVAILABILITY_TYPE_ID ou por plano.
-          const bookingTypeId = CHECKOUT_CONFIG.availabilityAppointmentTypeId || plan.appointmentTypeId;
+          const bookingTypeId = CHECKOUT_CONFIG.availabilityAppointmentTypeId || meta?.appointmentTypeId;
           const result = await elationBooking.createPublicAppointment({
             appointment: {
               appointment_type_id: bookingTypeId,

@@ -109,20 +109,6 @@ async function hintPost(path, body) {
   return res.json();
 }
 
-/**
- * Resolve o ID do plano Hint pelo nome exato via API.
- * Funciona em sandbox e produção sem nenhuma config extra.
- * @param {string} name  Nome exato do plano no Hint (ex: "Clube Saúde")
- * @returns {Promise<string>} plan id (pln-…)
- */
-export async function resolveHintPlanId(name) {
-  const { data } = await hintGet("/api/provider/plans");
-  const plans = Array.isArray(data) ? data : [];
-  const plan  = plans.find(p => p.name === name);
-  if (!plan) throw new Error(`Hint plan não encontrado: "${name}". Disponíveis: ${plans.map(p => p.name).join(", ")}`);
-  return plan.id;
-}
-
 // ─── API calls (Practice/Provider API — path UNVERSIONED) ────────────────────
 export const hintService = {
   getMemberships:  (params) => hintGetAll("/api/provider/memberships",  params),

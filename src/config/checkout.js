@@ -34,52 +34,45 @@ export const CHECKOUT_CONFIG = {
   },
 };
 
-// Plans — slug (usado na URL do checkout) → dados
-// appointmentTypeId: ID do Elation (descoberto via /book/api/practices/{id})
-// hintSignupSlug: slug do signup page no Hint (viajourneytelehealth.hint.com/signup/{slug})
-// Plans — slug → metadados LOCAIS apenas. Preço e billing vêm do Hint (via /quotes em runtime).
-// `hintPlanName`: nome exato do plano no Hint — resolvido dinamicamente em runtime via API
-// `appointmentTypeId`: ID do Elation (slots de agendamento)
-// `durationMin`: duração da consulta (não vem do Hint)
-export const PLANS = {
-  // IDs unificados (mesma prática p/ booking público + OAuth).
-  // Descobertos via /api/2.0/appointment_types/ — só esses têm is_telehealth:true
-  // e patient_form_ids configurados (dispara Passport + emails).
+// Metadados locais por slug — apenas o que o Hint não fornece:
+// appointmentTypeId (Elation), durationMin e oneOff.
+// Os planos em si (id, name, preço) vêm sempre da API do Hint.
+// IDs descobertos via /api/2.0/appointment_types/ — só esses têm is_telehealth:true
+// e patient_form_ids configurados (dispara Passport + emails).
+export const PLAN_META = {
   "consulta-avulsa": {
     slug: "consulta-avulsa",
-    name: "Consulta Avulsa",
-    hintPlanName: "Consulta Avulsa",                 // match exato no Hint API
-    appointmentTypeId: 144607022809193,              // "One Time"
-    oauthAppointmentTypeId: 144607022809193,
+    appointmentTypeId: 144607022809193,
     appointmentTypeName: "One Time",
     durationMin: 15,
     oneOff: true,
   },
   "clube-saude": {
     slug: "clube-saude",
-    name: "Clube Saúde",
-    hintPlanName: "Clube Saúde",
-    appointmentTypeId: 144607020515433,              // "Member"
-    oauthAppointmentTypeId: 144607020515433,
+    appointmentTypeId: 144607020515433,
     appointmentTypeName: "Member",
     durationMin: 30,
     oneOff: false,
   },
   "concierge": {
     slug: "concierge",
-    name: "Via Journey Concierge",
-    hintPlanName: "Via Journey Concierge",
-    appointmentTypeId: 144607021105257,              // "Concierge"
-    oauthAppointmentTypeId: 144607021105257,
+    appointmentTypeId: 144607021105257,
     appointmentTypeName: "Concierge",
     durationMin: 40,
     oneOff: false,
   },
 };
 
-export function getPlan(slug) {
-  return PLANS[slug] || null;
+// Deriva slug a partir do nome do plano no Hint
+export function slugFromHintName(name) {
+  if (!name) return null;
+  const n = name.toLowerCase();
+  if (n.includes("concierge"))        return "concierge";
+  if (n.includes("clube") || n.includes("saúde") || n.includes("saude")) return "clube-saude";
+  if (n.includes("avulsa"))           return "consulta-avulsa";
+  return null;
 }
 
-// getHintSignupUrl removido — checkout agora é 100% in-house (sem redirect pro Hint).
-// Pagamento é coletado via Rainforest Payment Component + POST /memberships.
+export function getPlanMeta(slug) {
+  return PLAN_META[slug] || null;
+}
