@@ -38,7 +38,7 @@ export const CHECKOUT_CONFIG = {
 // appointmentTypeId: ID do Elation (descoberto via /book/api/practices/{id})
 // hintSignupSlug: slug do signup page no Hint (viajourneytelehealth.hint.com/signup/{slug})
 // Plans — slug → metadados LOCAIS apenas. Preço e billing vêm do Hint (via /quotes em runtime).
-// `hintPlanId`: ID do Hint (descoberto via GET /api/provider/plans)
+// `hintPlanName`: nome exato do plano no Hint — resolvido dinamicamente em runtime via API
 // `appointmentTypeId`: ID do Elation (slots de agendamento)
 // `durationMin`: duração da consulta (não vem do Hint)
 export const PLANS = {
@@ -48,17 +48,17 @@ export const PLANS = {
   "consulta-avulsa": {
     slug: "consulta-avulsa",
     name: "Consulta Avulsa",
-    hintPlanId: "pln-r83pbK9VSnvv",
+    hintPlanName: "Consulta Avulsa",                 // match exato no Hint API
     appointmentTypeId: 144607022809193,              // "One Time"
     oauthAppointmentTypeId: 144607022809193,
     appointmentTypeName: "One Time",
     durationMin: 15,
-    oneOff: true,  // consulta única — cancelar membership após 1ª cobrança
+    oneOff: true,
   },
   "clube-saude": {
     slug: "clube-saude",
     name: "Clube Saúde",
-    hintPlanId: "pln-ExR8mMWRvmDy",
+    hintPlanName: "Clube Saúde",
     appointmentTypeId: 144607020515433,              // "Member"
     oauthAppointmentTypeId: 144607020515433,
     appointmentTypeName: "Member",
@@ -68,7 +68,7 @@ export const PLANS = {
   "concierge": {
     slug: "concierge",
     name: "Via Journey Concierge",
-    hintPlanId: "pln-lReUxne3bPcN",
+    hintPlanName: "Via Journey Concierge",
     appointmentTypeId: 144607021105257,              // "Concierge"
     oauthAppointmentTypeId: 144607021105257,
     appointmentTypeName: "Concierge",

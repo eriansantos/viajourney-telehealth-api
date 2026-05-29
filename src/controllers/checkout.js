@@ -5,7 +5,7 @@
 import { CHECKOUT_CONFIG, PLANS, getPlan } from "../config/checkout.js";
 import { elationBooking } from "../services/elationBooking.js";
 import { lookupByEmail, ghlIsConfigured } from "../services/ghl.js";
-import { hintService, hintIsConfigured } from "../services/hint.js";
+import { hintService, hintIsConfigured, resolveHintPlanId } from "../services/hint.js";
 import { sendConfirmationEmail } from "../services/email.js";
 
 function isoDate(d) { return d.toISOString().slice(0, 10); }
@@ -111,7 +111,8 @@ export const checkoutController = {
 
           if (hintIsConfigured()) {
             try {
-              const quote = await hintService.createQuote(p.hintPlanId, { age: 35, periodInMonths: 1 });
+              const hintPlanId = await resolveHintPlanId(p.hintPlanName);
+              const quote = await hintService.createQuote(hintPlanId, { age: 35, periodInMonths: 1 });
               priceCents           = quote?.ongoing_amount_in_cents ?? null;
               billingPeriod        = quote?.billing_period ?? null;
               registrationFeeCents = quote?.registration_fee_in_cents ?? 0;
@@ -353,9 +354,10 @@ export const checkoutController = {
       const paymentMethod = await hintService.createPaymentMethod(patientId, rainforestId);
 
       // 2) Criar membership
+      const hintPlanId = await resolveHintPlanId(plan.hintPlanName);
       const today = new Date().toISOString().slice(0, 10);
       const membership = await hintService.createMembership({
-        planId:         plan.hintPlanId,
+        planId:         hintPlanId,
         patientId,
         startDate:      startDate || today,
         periodInMonths,
