@@ -190,41 +190,6 @@ function buildHtml({ firstName, planSlug, appointmentDatetime, membershipId }) {
                     ${slotBlock}
                   </table>
 
-                  <!-- Divisor -->
-                  <table width="100%" cellpadding="0" cellspacing="0" role="presentation"
-                         style="margin-bottom:24px">
-                    <tr>
-                      <td style="height:1px;background:${C.border}"></td>
-                    </tr>
-                  </table>
-
-                  <!-- Próximos passos -->
-                  <p style="margin:0 0 14px;font-family:'Poppins',Roboto,sans-serif;
-                             font-size:14px;font-weight:700;color:${C.dark};
-                             letter-spacing:.5px;text-transform:uppercase">
-                    Próximos passos
-                  </p>
-
-                  <table width="100%" cellpadding="0" cellspacing="0" role="presentation"
-                         style="margin-bottom:28px">
-                    ${[
-                      ["📬", "Você receberá um convite para criar seu perfil no portal de pacientes (Elation Passport)."],
-                      ["📋", "Confirme seu agendamento quando receber o email do portal."],
-                      ["💬", "Dúvidas? Responda este email — respondemos em até 24h."],
-                    ].map(([icon, text]) => `
-                    <tr>
-                      <td style="padding:0 0 12px">
-                        <table width="100%" cellpadding="0" cellspacing="0">
-                          <tr>
-                            <td width="32" valign="top" style="font-size:16px;padding-top:1px">${icon}</td>
-                            <td style="font-family:'Poppins',Roboto,sans-serif;font-size:14px;
-                                       color:${C.t3};line-height:1.6">${text}</td>
-                          </tr>
-                        </table>
-                      </td>
-                    </tr>`).join("")}
-                  </table>
-
                   <!-- CTA -->
                   <table cellpadding="0" cellspacing="0" role="presentation">
                     <tr>
