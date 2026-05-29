@@ -35,6 +35,11 @@ export default {
     apiVersion: process.env.GHL_API_VERSION || "2021-07-28",
   },
 
+  resend: {
+    apiKey: process.env.RESEND_API_KEY || "",
+    from:   process.env.RESEND_FROM   || "noreply@viajourneytelehealth.com",
+  },
+
   ringcentral: {
     clientId:     process.env.RC_CLIENT_ID     || "",
     clientSecret: process.env.RC_CLIENT_SECRET || "",
