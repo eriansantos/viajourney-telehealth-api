@@ -297,6 +297,7 @@ export const checkoutController = {
       }
 
       // 1) Criar paciente no Hint
+      console.log(`[hint] createPatient → email=${patient.email} name=${patient.firstName} ${patient.lastName || ""}`);
       const hintPatient = await hintService.createPatient({
         first_name: patient.firstName,
         last_name:  patient.lastName || "",
@@ -305,12 +306,15 @@ export const checkoutController = {
         phone_mobile: patient.phone || null,
         address_state: patient.state || null,
       });
+      console.log(`[hint] patient criado/encontrado → id=${hintPatient.id}`);
 
       // 2) Criar setup intent
+      console.log(`[hint] createSetupIntent → patientId=${hintPatient.id} planId=${planId}`);
       const intent = await hintService.createSetupIntent(hintPatient.id, {
         userIsOwner: true,
         acceptsBank: false,
       });
+      console.log(`[hint] setupIntent → processor=${intent.payment_processor} configId=${intent.payment_method_config_id}`);
 
       res.json({
         patientId: hintPatient.id,
@@ -345,17 +349,21 @@ export const checkoutController = {
       }
       const meta = planSlug ? getPlanMeta(planSlug) : null;
 
+      console.log(`[hint] createPaymentMethod → patientId=${patientId} rainforestId=${rainforestId}`);
       // 1) Anexar método de pagamento ao paciente
       const paymentMethod = await hintService.createPaymentMethod(patientId, rainforestId);
+      console.log(`[hint] paymentMethod criado → id=${paymentMethod?.id} last4=${paymentMethod?.last_four} type=${paymentMethod?.type}`);
 
       // 2) Criar membership usando o planId do Hint recebido do frontend
       const today = new Date().toISOString().slice(0, 10);
+      console.log(`[hint] createMembership → planId=${planId} patientId=${patientId} startDate=${startDate || today} period=${periodInMonths}mo`);
       const membership = await hintService.createMembership({
         planId,
         patientId,
         startDate:      startDate || today,
         periodInMonths,
       });
+      console.log(`[hint] membership criada → id=${membership?.id} status=${membership?.status} rate=${membership?.period_rate_in_cents}¢ enrollment=${membership?.enrollment_status}`);
 
       // 3) Criar paciente + appointment no Elation via API pública /book/api/appointments.
       // CRUCIAL: usar este endpoint (não a OAuth /api/2.0/appointments) é o ÚNICO jeito
@@ -367,13 +375,11 @@ export const checkoutController = {
         appointment = { status: "pending", reason: null };
         try {
           // slot.datetime vem do frontend como naive ET (displayTimezone).
-          // Elation espera aware em sourceTimezone (LA). Shift ET→LA, depois anexa offset LA.
+          // Elation espera aware em sourceTimezone (ET). Anexa offset ET.
           const laNaive = shiftNaive(slot.datetime, CHECKOUT_CONFIG.displayTimezone, CHECKOUT_CONFIG.sourceTimezone);
           const scheduledDate = toTZAware(laNaive, CHECKOUT_CONFIG.sourceTimezone);
-          // Usa o mesmo appointmentTypeId da consulta de disponibilidade.
-          // O tipo específico do plano pode não estar configurado no sandbox —
-          // em produção ajustar via ELATION_AVAILABILITY_TYPE_ID ou por plano.
           const bookingTypeId = CHECKOUT_CONFIG.availabilityAppointmentTypeId || meta?.appointmentTypeId;
+          console.log(`[elation] createPublicAppointment → slot_original=${slot.datetime} slot_converted=${scheduledDate} typeId=${bookingTypeId} physician=${CHECKOUT_CONFIG.physicianId}`);
           const result = await elationBooking.createPublicAppointment({
             appointment: {
               appointment_type_id: bookingTypeId,
@@ -390,6 +396,7 @@ export const checkoutController = {
             physicianId:       CHECKOUT_CONFIG.physicianId,
             serviceLocationId: CHECKOUT_CONFIG.serviceLocationId,
           });
+          console.log(`[elation] appointment criado → id=${result.appointment?.id} appt_time=${result.appointment?.appt_time} patient_id=${result.patient?.id}`);
 
           appointment = {
             status:   "confirmed",
@@ -399,14 +406,17 @@ export const checkoutController = {
             isTelehealth:     result.appointment?.appt_type?.is_telehealth,
           };
         } catch (err) {
-          console.warn("[checkout.finalize] Elation booking falhou:", err.message);
+          console.warn(`[elation] booking falhou → ${err.message}`);
           appointment.reason = err.message.slice(0, 500);
         }
+      } else {
+        console.log(`[elation] booking pulado → slot=${slot?.datetime || "none"} email=${patient?.email || "none"}`);
       }
 
       // 4) Email de confirmação — fire-and-forget (não bloqueia a resposta)
       let email = { skipped: true };
       if (patient?.email) {
+        console.log(`[email] enviando confirmação → to=${patient.email} plan=${planSlug} appointment=${appointment?.status}`);
         sendConfirmationEmail({
           to:                  patient.email,
           firstName:           patient.firstName || "Paciente",
@@ -414,10 +424,11 @@ export const checkoutController = {
           appointmentDatetime: appointment?.datetime || null,
           membershipId:        membership?.id || null,
         })
-          .then(r => { email = r; })
-          .catch(err => console.error("[checkout.finalize] email falhou:", err.message));
+          .then(r => { email = r; console.log(`[email] enviado → id=${r?.id}`); })
+          .catch(err => console.error(`[email] falhou → ${err.message}`));
       }
 
+      console.log(`[checkout.finalize] OK → membership=${membership?.id} appointment=${appointment?.status} email=${patient?.email}`);
       res.json({
         ok: true,
         paymentMethod: { id: paymentMethod?.id, lastFour: paymentMethod?.last_four, type: paymentMethod?.type },
@@ -426,7 +437,7 @@ export const checkoutController = {
         email,
       });
     } catch (e) {
-      console.error("[checkout.finalize]", e);
+      console.error("[checkout.finalize] ERRO →", e.message, e.stack?.split("\n")[1] || "");
       next(e);
     }
   },
