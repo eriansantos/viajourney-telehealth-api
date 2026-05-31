@@ -36,10 +36,11 @@ export const elationTransformer = {
       const mode = appt.mode in byMode ? appt.mode : "OTHER";
       byMode[mode]++;
 
-      // Visit type (mapped from reason field)
-      if (appt.reason) {
-        byType[appt.reason] = (byType[appt.reason] || 0) + 1;
-      }
+      // Visit type (mapped from reason field). Appointments sem `reason`
+      // entram em "Não informado" para que as fatias do donut somem o total
+      // (antes ficavam de fora e o gráfico não fechava com o "Total").
+      const visitType = (appt.reason && String(appt.reason).trim()) || "Não informado";
+      byType[visitType] = (byType[visitType] || 0) + 1;
 
       // Per physician (ID only)
       const pid = appt.physician;
@@ -165,10 +166,22 @@ export const elationTransformer = {
     const appts   = appointments.results || [];
     const patList = patients.results || [];
 
-    // Map patient ID → raw preferred_language
+    // Normaliza idioma aceitando tanto nomes completos ("Portuguese") quanto
+    // códigos de locale ("pt", "pt-BR"). Antes só casava o nome completo, então
+    // pacientes vindos do checkout (que grava "pt-BR") caíam todos em "Other".
+    const normalizeLang = (raw) => {
+      const s = String(raw || "").toLowerCase().trim();
+      if (!s) return "Other";
+      if (s.includes("portug") || s === "pt" || s.startsWith("pt-") || s.startsWith("pt_")) return "Portuguese";
+      if (s.includes("english") || s === "en" || s.startsWith("en-") || s.startsWith("en_")) return "English";
+      if (s.includes("spanish") || s.includes("españ") || s.includes("espan") || s === "es" || s.startsWith("es-") || s.startsWith("es_")) return "Spanish";
+      return "Other";
+    };
+
+    // Map patient ID → preferred_language cru (pode vir vazio)
     const langMap = {};
     for (const p of patList) {
-      langMap[p.id] = p.preferred_language || "Other";
+      langMap[p.id] = p.preferred_language || "";
     }
 
     const byLanguage         = {};
@@ -179,11 +192,10 @@ export const elationTransformer = {
     const noShowByLangRaw    = {};
 
     for (const appt of appts) {
-      const rawLang = langMap[appt.patient] || "Other";
-      let lang = "Other";
-      if (rawLang.toLowerCase().includes("portuguese")) lang = "Portuguese";
-      else if (rawLang.toLowerCase().includes("english")) lang = "English";
-      else if (rawLang.toLowerCase().includes("spanish")) lang = "Spanish";
+      // Fonte do idioma: preferred_language do paciente e, na ausência, o
+      // patient_language gravado no metadata do appointment (fluxo do checkout).
+      const rawLang = langMap[appt.patient] || appt.metadata?.data?.patient_language || "Other";
+      const lang = normalizeLang(rawLang);
 
       const status = appt.status?.status ?? "";
 

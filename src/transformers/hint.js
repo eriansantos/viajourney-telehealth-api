@@ -75,12 +75,17 @@ export const hintTransformer = {
         ? (1 - Math.pow(1 - monthlyChurnPct / 100, 12)) * 100
         : 0;
 
-    // Duração média (em meses) das memberships já encerradas
-    const ended = mems.filter((m) => m._start && m._end && m._end <= now);
+    // Duração média (em meses) de TODAS as memberships com data de início.
+    // Para membros ativos (sem end_date) usamos `now` como fim — ou seja, o
+    // tempo de permanência até hoje. Antes só contava memberships encerradas,
+    // então com 100% de membros ativos o resultado era sempre 0 meses.
+    const withStart = mems.filter((m) => m._start);
     const avgDurationMonths =
-      ended.length > 0
-        ? ended.reduce((s, m) => s + (m._end - m._start) / (1000 * 60 * 60 * 24 * 30.44), 0) /
-          ended.length
+      withStart.length > 0
+        ? withStart.reduce(
+            (s, m) => s + ((m._end || now) - m._start) / (1000 * 60 * 60 * 24 * 30.44),
+            0
+          ) / withStart.length
         : 0;
 
     // ── Net growth — últimos 6 meses ───────────────────────────────────────

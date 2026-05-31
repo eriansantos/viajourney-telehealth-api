@@ -11,6 +11,7 @@ import checkoutRouter from "./routes/checkout.js";
 
 const app = express();
 
+app.set("trust proxy", 1);
 app.use(helmet());
 // Allow: explicit origins from env, any *.vercel.app deploy, and localhost
 const explicitOrigins = config.allowedOrigin.split(",").map(o => o.trim());
@@ -26,11 +27,13 @@ app.use(cors({
 app.use(morgan("dev"));
 app.use(express.json());
 
+const isDev = process.env.NODE_ENV !== "production";
+
 // Checkout público (sem Clerk) — DEVE vir antes do middleware clerk
 // Rate limit próprio: 60 req / 10 min por IP (evita abuso em endpoint público)
 const checkoutLimiter = rateLimit({
   windowMs: 10 * 60 * 1000,
-  max: 60,
+  max: isDev ? 10_000 : 60,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: "Too many checkout requests — please try again later." },
@@ -40,12 +43,12 @@ app.use("/checkout", checkoutLimiter, checkoutRouter);
 app.use(clerk);
 
 // ─── Rate limiting ────────────────────────────────────────────────────────────
-// Global: 200 req / 15 min per IP (covers UI polling)
+// Global: 200 req / 15 min per IP (covers UI polling) — sem limite em dev
 app.use(
   rateLimit({
     windowMs:         15 * 60 * 1000,
-    max:              200,
-    standardHeaders:  true,   // RateLimit-* headers
+    max:              isDev ? 10_000 : 200,
+    standardHeaders:  true,
     legacyHeaders:    false,
     message:          { error: "Too many requests — please try again later." },
   })
@@ -56,7 +59,7 @@ app.use(
   "/api/elation",
   rateLimit({
     windowMs:         1 * 60 * 1000,
-    max:              30,
+    max:              isDev ? 10_000 : 30,
     standardHeaders:  true,
     legacyHeaders:    false,
     message:          { error: "Elation API rate limit reached — please wait a moment." },

@@ -28,5 +28,6 @@ router.get("/hint/revenue",                                      hintController.
 
 // ─── GoHighLevel ──────────────────────────────────────────────────────────────
 router.get("/ghl/funnel",                                        ghlController.funnel);
+router.get("/ghl/contacts",                                      ghlController.contacts);
 
 export default router;

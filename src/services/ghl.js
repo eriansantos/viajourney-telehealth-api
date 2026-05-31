@@ -286,8 +286,155 @@ async function listContactsViaGet({ from, to, maxRecords = 5000 }) {
   return records;
 }
 
+// ─── Pipelines ────────────────────────────────────────────────────────────────
+
+/** Cache simples em memória pra evitar chamada repetida a cada request. */
+let _pipelinesCache = null;
+let _pipelinesCachedAt = 0;
+const PIPELINES_TTL_MS = 5 * 60 * 1000; // 5 min
+
+export async function getPipelines() {
+  if (_pipelinesCache && Date.now() - _pipelinesCachedAt < PIPELINES_TTL_MS) {
+    return _pipelinesCache;
+  }
+  const data = await ghlGet("/opportunities/pipelines", { locationId });
+  _pipelinesCache = Array.isArray(data?.pipelines) ? data.pipelines : [];
+  _pipelinesCachedAt = Date.now();
+  return _pipelinesCache;
+}
+
+/** Mapas rápidos id → name, construídos a partir dos pipelines. */
+export async function getPipelineMaps() {
+  const pipelines = await getPipelines();
+  const pipelineMap = {};
+  const stageMap = {};
+  for (const p of pipelines) {
+    pipelineMap[p.id] = p.name;
+    for (const s of (p.stages || [])) {
+      stageMap[s.id] = s.name;
+    }
+  }
+  return { pipelines, pipelineMap, stageMap };
+}
+
+// ─── Contacts paginados com filtro (para a view de Leads) ─────────────────────
+
+/**
+ * Busca contacts com paginação e filtros opcionais de pipeline e tag.
+ * Retorna contacts enriquecidos com nome do pipeline/stage.
+ *
+ * @param {object} opts
+ * @param {string}   [opts.tag]       — filtra contacts que contenham essa tag
+ * @param {string}   [opts.pipeline]  — filtra contacts com oportunidade nesse pipeline
+ * @param {number}   [opts.page=1]
+ * @param {number}   [opts.limit=50]
+ * @returns {Promise<{ contacts: Array, total: number }>}
+ */
+export async function getContactsPage({ tag, pipeline, page = 1, limit = 50 } = {}) {
+  if (!ghlIsConfigured()) return { contacts: [], total: 0 };
+
+  // Monta filtros GHL
+  const filters = [];
+  if (tag) {
+    filters.push({ field: "tags", operator: "contains", value: tag });
+  }
+
+  // GHL não suporta filtro nativo por pipeline na /contacts/search — fazemos
+  // paginação com limite maior e filtramos client-side se pipeline for fornecido.
+  const needsClientFilter = !!pipeline;
+  const fetchLimit = needsClientFilter ? 100 : limit;
+
+  // Se filtro de pipeline: precisamos varrer mais páginas. Busca até 10 páginas.
+  if (needsClientFilter) {
+    const matched = [];
+    let ghPage = 1;
+    while (matched.length < page * limit) {
+      const body = {
+        locationId,
+        page: ghPage,
+        pageLimit: 100,
+        filters,
+        sort: [{ field: "dateAdded", direction: "desc" }],
+      };
+      const json = await ghlPost("/contacts/search", body);
+      const batch = Array.isArray(json?.contacts) ? json.contacts : [];
+      if (batch.length === 0) break;
+
+      // Filtra client-side por pipeline
+      for (const c of batch) {
+        if ((c.opportunities || []).some(o => o.pipelineId === pipeline)) {
+          matched.push(c);
+        }
+      }
+      if (batch.length < 100) break;
+      ghPage++;
+      if (ghPage > 15) break; // segurança
+    }
+
+    const start = (page - 1) * limit;
+    return {
+      contacts: matched.slice(start, start + limit),
+      total: matched.length,
+    };
+  }
+
+  // Sem filtro de pipeline: usa paginação direta do GHL
+  const body = {
+    locationId,
+    page,
+    pageLimit: limit,
+    filters,
+    sort: [{ field: "dateAdded", direction: "desc" }],
+  };
+  const json = await ghlPost("/contacts/search", body);
+  const contacts = Array.isArray(json?.contacts) ? json.contacts : [];
+  const total = json?.meta?.total ?? json?.total ?? contacts.length;
+
+  return { contacts, total };
+}
+
+/**
+ * Varre todos os contacts pra coletar as tags únicas usadas na conta.
+ * Usa cache de 10 min.
+ */
+let _tagsCache = null;
+let _tagsCachedAt = 0;
+const TAGS_TTL_MS = 10 * 60 * 1000;
+
+export async function getAllTags() {
+  if (_tagsCache && Date.now() - _tagsCachedAt < TAGS_TTL_MS) return _tagsCache;
+
+  const tagSet = new Set();
+  let ghPage = 1;
+  while (true) {
+    const json = await ghlPost("/contacts/search", {
+      locationId,
+      page: ghPage,
+      pageLimit: 100,
+      filters: [],
+      sort: [{ field: "dateAdded", direction: "desc" }],
+    });
+    const batch = Array.isArray(json?.contacts) ? json.contacts : [];
+    if (batch.length === 0) break;
+    for (const c of batch) {
+      for (const t of (c.tags || [])) tagSet.add(t);
+    }
+    if (batch.length < 100) break;
+    ghPage++;
+    if (ghPage > 20) break;
+  }
+
+  _tagsCache = Array.from(tagSet).sort();
+  _tagsCachedAt = Date.now();
+  return _tagsCache;
+}
+
 export const ghlService = {
   lookupByEmail,
   listContactsInRange,
   mapContact,
+  getPipelines,
+  getPipelineMaps,
+  getContactsPage,
+  getAllTags,
 };

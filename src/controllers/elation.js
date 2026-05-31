@@ -55,12 +55,15 @@ export const elationController = {
       if (from) params.scheduled_date_from = from;
       if (to)   params.scheduled_date_to   = to;
 
-      const [appointments, patients] = await Promise.all([
+      const [appointments, patientsResult] = await Promise.allSettled([
         elationService.getAppointments(params),
         elationService.getPatients(),
       ]);
 
-      res.json(elationTransformer.languageEquity({ appointments, patients }));
+      const appts = appointments.status === "fulfilled" ? appointments.value : [];
+      const patients = patientsResult.status === "fulfilled" ? patientsResult.value : [];
+
+      res.json(elationTransformer.languageEquity({ appointments: appts, patients }));
     } catch (err) {
       next(err);
     }
