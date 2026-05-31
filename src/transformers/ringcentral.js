@@ -82,10 +82,14 @@ export const rcTransformer = {
         : null;
 
     // ── No-show & cancellation via status do Elation ─────────────────────────
-    const completed   = appts.filter((a) => STATUS.COMPLETED.includes(a.status?.status)).length;
+    // Denominador = TODOS os appointments da janela (igual ao módulo Access &
+    // Speed-to-Care). Antes usava completed+noShows+cancels, mas como nesta
+    // prática os atendimentos raramente recebem status "Checked Out", o
+    // denominador colapsava (ex.: 8 no-show / 9 = 88,9%) e divergia do 12%
+    // mostrado nas demais telas. Agora bate com o cálculo canônico do Elation.
     const noShows     = appts.filter((a) => STATUS.NO_SHOW.includes(a.status?.status)).length;
     const cancels     = appts.filter((a) => STATUS.CANCELLED.includes(a.status?.status)).length;
-    const denominator = completed + noShows + cancels || 1;
+    const denominator = appts.length || 1;
 
     const noShowRate      = round1((noShows  / denominator) * 100);
     const cancellationRate = round1((cancels  / denominator) * 100);
