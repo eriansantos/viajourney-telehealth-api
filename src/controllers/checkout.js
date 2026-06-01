@@ -2,9 +2,9 @@
 // Fonte dos slots: API pública /book/api do Elation (sem credencial).
 // Fonte dos dados do paciente: URL params da LP (provisório) — migração futura para GHL por email.
 
-import { CHECKOUT_CONFIG, PLAN_META, getPlanMeta, slugFromHintName } from "../config/checkout.js";
+import { CHECKOUT_CONFIG, PLAN_META, getPlanMeta, slugFromHintName, leadSourceForHint } from "../config/checkout.js";
 import { elationBooking } from "../services/elationBooking.js";
-import { lookupByEmail, ghlIsConfigured } from "../services/ghl.js";
+import { lookupByEmail, updateContact, ghlIsConfigured } from "../services/ghl.js";
 import { hintService, hintIsConfigured } from "../services/hint.js";
 import { sendConfirmationEmail } from "../services/email.js";
 
@@ -303,8 +303,14 @@ export const checkoutController = {
         last_name:  patient.lastName || "",
         email:      patient.email,
         dob:        patient.dob || null,
-        phone_mobile: patient.phone || null,
-        address_state: patient.state || null,
+        phone_mobile:   patient.phone || null,
+        address_line1:  patient.address1 || null,
+        address_line2:  patient.address2 || null,
+        address_city:   patient.city || null,
+        address_state:  patient.state && patient.state !== "BR" ? patient.state : null,
+        address_zip:    patient.zip || null,
+        address_country: patient.country || null,
+        lead_source:    leadSourceForHint(patient.howHeard) || undefined,
       });
       console.log(`[hint] patient criado/encontrado → id=${hintPatient.id}`);
 
@@ -411,6 +417,33 @@ export const checkoutController = {
         }
       } else {
         console.log(`[elation] booking pulado → slot=${slot?.datetime || "none"} email=${patient?.email || "none"}`);
+      }
+
+      // 3.5) Atualizar contato no GHL com os dados do checkout — fire-and-forget.
+      // Busca o contactId por email e faz PUT com endereço/telefone/nome.
+      if (ghlIsConfigured() && patient?.email) {
+        (async () => {
+          try {
+            const contact = await lookupByEmail(patient.email);
+            if (!contact?.ghlContactId) {
+              console.log(`[ghl] update pulado → contato não encontrado para ${patient.email}`);
+              return;
+            }
+            await updateContact(contact.ghlContactId, {
+              firstName:  patient.firstName,
+              lastName:   patient.lastName,
+              phone:      patient.phone,
+              address1:   patient.address1,
+              city:       patient.city,
+              state:      patient.state && patient.state !== "BR" ? patient.state : undefined,
+              postalCode: patient.zip,
+              country:    patient.country,
+            });
+            console.log(`[ghl] contato atualizado → id=${contact.ghlContactId} email=${patient.email}`);
+          } catch (err) {
+            console.error(`[ghl] update falhou → ${err.message}`);
+          }
+        })();
       }
 
       // 4) Email de confirmação — fire-and-forget (não bloqueia a resposta)

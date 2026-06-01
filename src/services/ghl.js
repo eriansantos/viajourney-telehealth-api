@@ -61,6 +61,46 @@ async function ghlPost(path, body) {
   return json;
 }
 
+async function ghlPut(path, body) {
+  const res = await fetchWithTimeout(`${baseUrl}${path}`, {
+    method:  "PUT",
+    headers: { ...headers(), "Content-Type": "application/json" },
+    body:    JSON.stringify(body),
+  });
+  const text = await res.text();
+  let json;
+  try { json = text ? JSON.parse(text) : null; } catch { json = { raw: text }; }
+  if (!res.ok) {
+    const err = new Error(`GHL PUT ${res.status} ${path}: ${JSON.stringify(json)}`);
+    err.status = res.status;
+    err.upstream = json;
+    throw err;
+  }
+  return json;
+}
+
+/**
+ * Atualiza um contato no GHL (PUT /contacts/:id).
+ * Mapeia os campos do checkout para os campos padrão do GHL.
+ * Só envia campos com valor (não sobrescreve com vazio).
+ * @param {string} contactId
+ * @param {object} fields  { firstName, lastName, phone, address1, city, state, postalCode, country }
+ */
+export async function updateContact(contactId, fields = {}) {
+  if (!ghlIsConfigured() || !contactId) return null;
+  const body = {};
+  if (fields.firstName)  body.firstName  = fields.firstName;
+  if (fields.lastName)   body.lastName   = fields.lastName;
+  if (fields.phone)      body.phone      = fields.phone;
+  if (fields.address1)   body.address1   = fields.address1;
+  if (fields.city)       body.city       = fields.city;
+  if (fields.state)      body.state      = fields.state;
+  if (fields.postalCode) body.postalCode = fields.postalCode;
+  if (fields.country)    body.country    = fields.country;
+  if (Object.keys(body).length === 0) return null;
+  return ghlPut(`/contacts/${contactId}`, body);
+}
+
 /**
  * IDs dos custom fields da LP — confirmados via /locations/{id}/customFields.
  * Se a LP for migrada/recriada, basta atualizar aqui.
@@ -431,6 +471,7 @@ export async function getAllTags() {
 
 export const ghlService = {
   lookupByEmail,
+  updateContact,
   listContactsInRange,
   mapContact,
   getPipelines,
