@@ -82,6 +82,11 @@ export const checkoutController = {
         reason:    contact.reason    || "",
         dob:       contact.dob       || "",
         sex:       contact.sex       || "",
+        // Endereço (pré-preenche o form se já existir no GHL)
+        address1:  contact.address1 || "",
+        city:      contact.city     || "",
+        zip:       contact.zip      || "",
+        country:   contact.country  || "",
         ghlContactId: contact.ghlContactId || null,
       };
       // Quando flStatus="OUT_OF_STATE", o state US também é obrigatório

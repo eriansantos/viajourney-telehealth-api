@@ -212,10 +212,23 @@ function mapContact(c) {
     state,
     flStatus,                       // "FL" | "OUT_OF_STATE" | "BR" | null
     reason:       reasonRaw || "",
-    city:         c.city  || "",
+    // Campos de endereço padrão do GHL — pré-preenchem o form do checkout.
+    address1:     c.address1   || "",
+    city:         c.city       || "",
+    zip:          c.postalCode || "",
+    country:      normalizeCountry(c.country),
     source:       c.source || null,
     tags:         c.tags   || [],
   };
+}
+
+// Normaliza código de país do GHL para o nome esperado no campo do checkout/Hint.
+function normalizeCountry(code) {
+  if (!code) return "";
+  const c = String(code).trim().toUpperCase();
+  if (c === "US" || c === "USA") return "United States";
+  if (c === "BR" || c === "BRA") return "Brasil";
+  return code;
 }
 
 /**
