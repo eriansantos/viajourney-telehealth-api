@@ -41,12 +41,6 @@ export const PLAN_META = {
     durationMin:       40,
     oneOff:            false,
   },
-  "teste": {
-    slug:              "teste",
-    appointmentTypeId: envInt("ELATION_APPT_TYPE_CLUBE_SAUDE"), // usa o mesmo tipo do clube-saude
-    durationMin:       30,
-    oneOff:            false,
-  },
 };
 
 // Lead sources do Hint (campo "How did you hear about us?").
@@ -77,7 +71,6 @@ export function slugFromHintName(name) {
   if (n.includes("concierge"))        return "concierge";
   if (n.includes("clube") || n.includes("saúde") || n.includes("saude")) return "clube-saude";
   if (n.includes("avulsa"))           return "consulta-avulsa";
-  if (n.includes("teste"))            return "teste";
   return null;
 }
 
