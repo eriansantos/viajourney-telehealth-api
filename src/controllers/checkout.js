@@ -63,6 +63,9 @@ export const checkoutController = {
    */
   async lookup(req, res, next) {
     try {
+      // Dados do GHL mudam entre requisições (atualizados no setup-intent) —
+      // desliga cache do browser pra não servir endereço/telefone defasado em 304.
+      res.set("Cache-Control", "no-store, no-cache, must-revalidate");
       const email = String(req.query.email || "").trim().toLowerCase();
       if (!email) return res.status(400).json({ error: "email é obrigatório" });
       if (!ghlIsConfigured()) {
