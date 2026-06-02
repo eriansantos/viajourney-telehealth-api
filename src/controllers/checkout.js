@@ -327,6 +327,34 @@ export const checkoutController = {
       });
       console.log(`[hint] setupIntent → processor=${intent.payment_processor} configId=${intent.payment_method_config_id}`);
 
+      // Atualiza o contato no GHL com os dados do form — fire-and-forget.
+      // Acontece ao clicar "Continuar para pagamento" (antes do pagamento),
+      // garantindo que os dados são salvos mesmo se o pagamento for abandonado.
+      if (ghlIsConfigured() && patient?.email) {
+        (async () => {
+          try {
+            const contact = await lookupByEmail(patient.email);
+            if (!contact?.ghlContactId) {
+              console.log(`[ghl] update pulado → contato não encontrado para ${patient.email}`);
+              return;
+            }
+            await updateContact(contact.ghlContactId, {
+              firstName:  patient.firstName,
+              lastName:   patient.lastName,
+              phone:      patient.phone,
+              address1:   patient.address1,
+              city:       patient.city,
+              state:      patient.state && patient.state !== "BR" ? patient.state : undefined,
+              postalCode: patient.zip,
+              country:    patient.country,
+            });
+            console.log(`[ghl] contato atualizado → id=${contact.ghlContactId} email=${patient.email}`);
+          } catch (err) {
+            console.error(`[ghl] update falhou → ${err.message}`);
+          }
+        })();
+      }
+
       res.json({
         patientId: hintPatient.id,
         planId,
@@ -422,33 +450,6 @@ export const checkoutController = {
         }
       } else {
         console.log(`[elation] booking pulado → slot=${slot?.datetime || "none"} email=${patient?.email || "none"}`);
-      }
-
-      // 3.5) Atualizar contato no GHL com os dados do checkout — fire-and-forget.
-      // Busca o contactId por email e faz PUT com endereço/telefone/nome.
-      if (ghlIsConfigured() && patient?.email) {
-        (async () => {
-          try {
-            const contact = await lookupByEmail(patient.email);
-            if (!contact?.ghlContactId) {
-              console.log(`[ghl] update pulado → contato não encontrado para ${patient.email}`);
-              return;
-            }
-            await updateContact(contact.ghlContactId, {
-              firstName:  patient.firstName,
-              lastName:   patient.lastName,
-              phone:      patient.phone,
-              address1:   patient.address1,
-              city:       patient.city,
-              state:      patient.state && patient.state !== "BR" ? patient.state : undefined,
-              postalCode: patient.zip,
-              country:    patient.country,
-            });
-            console.log(`[ghl] contato atualizado → id=${contact.ghlContactId} email=${patient.email}`);
-          } catch (err) {
-            console.error(`[ghl] update falhou → ${err.message}`);
-          }
-        })();
       }
 
       // 4) Email de confirmação — fire-and-forget (não bloqueia a resposta)
