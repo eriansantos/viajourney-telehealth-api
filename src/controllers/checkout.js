@@ -4,7 +4,10 @@
 
 import { CHECKOUT_CONFIG, PLAN_META, getPlanMeta, slugFromHintName, leadSourceForHint } from "../config/checkout.js";
 import { elationBooking } from "../services/elationBooking.js";
-import { lookupByEmail, updateContact, ghlIsConfigured } from "../services/ghl.js";
+import {
+  lookupByEmail, updateContact, upsertContact, ensureOpportunity, ghlIsConfigured,
+  OUT_OF_STATE_TAGS, OUT_OF_STATE_PIPELINE_ID, OUT_OF_STATE_STAGE_ID,
+} from "../services/ghl.js";
 import { hintService, hintIsConfigured } from "../services/hint.js";
 import { sendConfirmationEmail } from "../services/email.js";
 
@@ -285,6 +288,67 @@ export const checkoutController = {
           reason: "use /checkout/setup-intent + /checkout/finalize (Rainforest)",
         },
       });
+    } catch (e) { next(e); }
+  },
+
+  /**
+   * POST /checkout/out-of-state-lead
+   * Body: { patient: { firstName, lastName, email, phone, state, address1, city, zip, country, ... } }
+   * Lead dos EUA fora da Flórida — NÃO pode assinar (área de atuação é FL).
+   * Grava/atualiza o contato no GHL e aplica a tag de "fora da área" para
+   * follow-up da equipe. Não cria paciente no Hint nem setup intent.
+   */
+  async outOfStateLead(req, res, next) {
+    try {
+      const { patient } = req.body || {};
+      if (!patient?.email) {
+        return res.status(400).json({ error: "patient.email é obrigatório" });
+      }
+
+      let saved = false;
+      if (ghlIsConfigured()) {
+        try {
+          const up = await upsertContact({
+            email:      patient.email,
+            firstName:  patient.firstName,
+            lastName:   patient.lastName,
+            phone:      patient.phone,
+            address1:   patient.address1,
+            city:       patient.city,
+            state:      patient.state && patient.state !== "BR" ? patient.state : undefined,
+            postalCode: patient.zip,
+            country:    patient.country,
+            dob:        patient.dob,
+            tags:       OUT_OF_STATE_TAGS,
+          });
+          saved = true;
+          console.log(`[ghl] lead fora-da-area salvo → email=${patient.email} state=${patient.state} tags=${OUT_OF_STATE_TAGS.join(",")}`);
+
+          // Cria oportunidade no pipeline "Novo funil" → etapa "Outros Estados".
+          const contactId = up?.contact?.id || up?.id || null;
+          if (contactId) {
+            try {
+              const opp = await ensureOpportunity({
+                contactId,
+                pipelineId: OUT_OF_STATE_PIPELINE_ID,
+                stageId:    OUT_OF_STATE_STAGE_ID,
+                name:       `${patient.firstName || "Lead"} ${patient.lastName || ""} — Checkout (${patient.state || "fora da FL"})`.trim(),
+              });
+              console.log(`[ghl] oportunidade Outros Estados → id=${opp?.opportunity?.id || opp?.id || "?"} contato=${contactId}`);
+            } catch (err) {
+              console.error(`[ghl] criar oportunidade falhou → ${err.message}`);
+            }
+          } else {
+            console.warn(`[ghl] sem contactId no upsert → oportunidade não criada (email=${patient.email})`);
+          }
+        } catch (err) {
+          console.error(`[ghl] upsert lead fora-da-area falhou → ${err.message}`);
+        }
+      } else {
+        console.log(`[ghl] lead fora-da-area NÃO salvo → GHL não configurado (email=${patient.email})`);
+      }
+
+      res.json({ ok: true, saved });
     } catch (e) { next(e); }
   },
 

@@ -101,6 +101,73 @@ export async function updateContact(contactId, fields = {}) {
   return ghlPut(`/contacts/${contactId}`, body);
 }
 
+// Tag aplicada a leads dos EUA fora da Flórida (fora da área de atuação).
+// Identifica no CRM quem NÃO pode fazer a subscrição — base p/ smart list / follow-up.
+export const OUT_OF_STATE_TAGS = ["checkout"];
+
+// Oportunidade do lead fora-da-área: pipeline "Novo funil" → etapa "Outros Estados".
+// IDs confirmados via GET /opportunities/pipelines (produção).
+export const OUT_OF_STATE_PIPELINE_ID = "eIPhZA61snbD7aBfK6np";                  // "Novo funil"
+export const OUT_OF_STATE_STAGE_ID    = "9a37ef86-b7e2-4ba3-9cd0-5a0afba9ba0e";  // "Outros Estados"
+
+/**
+ * Cria uma oportunidade para o contato no pipeline/etapa indicados — evitando
+ * duplicar (se já existe oportunidade do contato nesse pipeline, retorna a existente).
+ * @returns {Promise<object|null>}
+ */
+export async function ensureOpportunity({ contactId, pipelineId, stageId, name, monetaryValue }) {
+  if (!ghlIsConfigured() || !contactId || !pipelineId || !stageId) return null;
+
+  // Procura oportunidade existente do contato no mesmo pipeline.
+  let existing = null;
+  try {
+    const found = await ghlGet("/opportunities/search", { location_id: locationId, contact_id: contactId });
+    existing = (found?.opportunities || []).find(o => o.pipelineId === pipelineId) || null;
+  } catch (e) { /* sem busca → segue e cria nova */ }
+
+  // Já existe no pipeline → MOVE para a etapa alvo (evita duplicar e garante
+  // que leads de fora da área caiam em "Outros Estados", mesmo vindos de outra etapa).
+  if (existing) {
+    if (existing.pipelineStageId === stageId) return existing;
+    return ghlPut(`/opportunities/${existing.id}`, { pipelineId, pipelineStageId: stageId });
+  }
+
+  // Não existe → cria nova na etapa alvo.
+  const body = {
+    pipelineId,
+    locationId,
+    pipelineStageId: stageId,
+    contactId,
+    status: "open",
+    name: name || "Lead Checkout — fora da área (FL)",
+  };
+  if (monetaryValue != null) body.monetaryValue = monetaryValue;
+  return ghlPost("/opportunities/", body);
+}
+
+/**
+ * Cria ou atualiza um contato no GHL por email (POST /contacts/upsert).
+ * Usado para gravar o lead mesmo quando ele não pode assinar (fora da FL).
+ * Só envia campos com valor; tags são mescladas (GHL não remove as existentes).
+ * @param {object} fields { email, firstName, lastName, phone, address1, city, state, postalCode, country, dob, tags }
+ * @returns {Promise<object|null>} contato upsertado, ou null se GHL não configurado / sem email
+ */
+export async function upsertContact(fields = {}) {
+  if (!ghlIsConfigured() || !fields.email) return null;
+  const body = { locationId, email: fields.email };
+  if (fields.firstName)  body.firstName  = fields.firstName;
+  if (fields.lastName)   body.lastName   = fields.lastName;
+  if (fields.phone)      body.phone      = fields.phone;
+  if (fields.address1)   body.address1   = fields.address1;
+  if (fields.city)       body.city       = fields.city;
+  if (fields.state)      body.state      = fields.state;
+  if (fields.postalCode) body.postalCode = fields.postalCode;
+  if (fields.country)    body.country    = fields.country;
+  if (fields.dob)        body.dateOfBirth = fields.dob;
+  if (Array.isArray(fields.tags) && fields.tags.length) body.tags = fields.tags;
+  return ghlPost("/contacts/upsert", body);
+}
+
 /**
  * IDs dos custom fields da LP — confirmados via /locations/{id}/customFields.
  * Se a LP for migrada/recriada, basta atualizar aqui.
@@ -485,6 +552,8 @@ export async function getAllTags() {
 export const ghlService = {
   lookupByEmail,
   updateContact,
+  upsertContact,
+  ensureOpportunity,
   listContactsInRange,
   mapContact,
   getPipelines,

@@ -10,6 +10,7 @@ router.get("/plans", checkoutController.plans);
 router.get("/lookup", checkoutController.lookup);
 router.get("/availability", checkoutController.availability);
 router.post("/book", checkoutController.book);
+router.post("/out-of-state-lead", checkoutController.outOfStateLead);
 router.post("/setup-intent", checkoutController.setupIntent);
 router.post("/finalize", checkoutController.finalize);
 
